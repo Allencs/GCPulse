@@ -6,7 +6,7 @@ echo "========================================="
 
 cd backend
 
-export JAVA_HOME=/Users/hb26933/Applications/jdk-21.0.5.jdk/Contents/Home
+export JAVA_HOME=$JAVA_21_HOME
 export PATH=$JAVA_HOME/bin:$PATH
 
 # 检查Java版本
