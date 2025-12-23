@@ -1,0 +1,165 @@
+// 全局样式
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+  
+  &:hover {
+    background: #555;
+  }
+}
+
+// 卡片样式
+.analysis-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  }
+  
+  .card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #303133;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    
+    .el-icon {
+      font-size: 20px;
+      color: #409EFF;
+    }
+  }
+  
+  .card-content {
+    color: #606266;
+  }
+}
+
+// 统计数字样式
+.stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+  margin-top: 8px;
+}
+
+// 标签样式
+.gc-tag {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  
+  &.success {
+    background: #f0f9ff;
+    color: #67c23a;
+    border: 1px solid #b3e19d;
+  }
+  
+  &.warning {
+    background: #fdf6ec;
+    color: #e6a23c;
+    border: 1px solid #f5dab1;
+  }
+  
+  &.danger {
+    background: #fef0f0;
+    color: #f56c6c;
+    border: 1px solid #fbc4c4;
+  }
+  
+  &.info {
+    background: #f4f4f5;
+    color: #909399;
+    border: 1px solid #d3d4d6;
+  }
+}
+
+// 响应式
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 20px !important;
+    
+    .logo-section h1 {
+      font-size: 18px !important;
+    }
+  }
+  
+  .app-main {
+    padding: 20px 10px !important;
+  }
+  
+  .analysis-card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+}
+
+// 动画
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in-up {
+  animation: slideInUp 0.5s ease-out;
+}
+
+// Loading样式
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  
+  .el-icon {
+    font-size: 48px;
+    color: #409EFF;
+    margin-bottom: 16px;
+  }
+  
+  .loading-text {
+    font-size: 16px;
+    color: #606266;
+    margin-bottom: 8px;
+  }
+  
+  .loading-subtext {
+    font-size: 14px;
+    color: #909399;
+  }
+}
+
