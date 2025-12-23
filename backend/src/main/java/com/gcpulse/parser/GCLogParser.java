@@ -27,7 +27,26 @@ public class GCLogParser {
     private static final Pattern ZGC_PATTERN_NEW = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\d+\\]\\[gc,phases\\s*\\] GC\\((\\d+)\\) (Pause .*?) ([\\d.]+)ms");
     private static final Pattern ZGC_UNIFIED_TIMESTAMP = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3})");
     
-    private static final Pattern CMS_PATTERN = Pattern.compile("\\[(?:Full )?GC.*?\\[(CMS|ParNew).*?(\\d+)K->(\\d+)K\\((\\d+)K\\).*?(\\d+\\.\\d+) secs\\]");
+    // CMS/ParNew格式 - 支持多种时间戳格式
+    // 时间戳格式1: "4.856: [GC"
+    // 时间戳格式2: "2025-08-05T13:23:18.409+0800: 4.856: [GC"
+    private static final Pattern CMS_TIMESTAMP_PATTERN = Pattern.compile("(\\d+\\.\\d+):\\s*\\[(?:GC|Full GC)");
+    
+    // ParNew 格式（年轻代GC）
+    private static final Pattern CMS_PARNEW_PATTERN = Pattern.compile("\\[ParNew(?:\\s+\\(promotion failed\\))?: (\\d+)K->(\\d+)K\\((\\d+)K\\), ([\\d.]+) secs\\]\\s+(\\d+)K->(\\d+)K\\((\\d+)K\\)");
+    
+    // Full GC 格式
+    private static final Pattern CMS_FULL_PATTERN = Pattern.compile("\\[Full GC.*?\\[CMS(?:[^:]*)?:\\s*(\\d+)K->(\\d+)K\\((\\d+)K\\),\\s*([\\d.]+)\\s*secs\\]\\s*(\\d+)K->(\\d+)K\\((\\d+)K\\)");
+    
+    // CMS Initial Mark（初始标记）
+    private static final Pattern CMS_INITIAL_MARK_PATTERN = Pattern.compile("\\[GC \\(CMS Initial Mark\\).*?\\[1 CMS-initial-mark: (\\d+)K\\((\\d+)K\\)\\]\\s*(\\d+)K\\((\\d+)K\\),\\s*([\\d.]+)\\s*secs\\]");
+    
+    // CMS Remark（重新标记）
+    private static final Pattern CMS_REMARK_PATTERN = Pattern.compile("\\[GC \\(CMS Final Remark\\).*?\\[1 CMS-remark: (\\d+)K\\((\\d+)K\\)\\]\\s*(\\d+)K\\((\\d+)K\\),\\s*([\\d.]+)\\s*secs\\]");
+    
+    // CMS 并发阶段
+    private static final Pattern CMS_CONCURRENT_PATTERN = Pattern.compile("\\[(CMS-concurrent-(?:mark|preclean|sweep|reset))(?:-start)?:?\\s*([\\d.]+)?(?:/([\\d.]+))?\\s*secs\\]");
+    
     private static final Pattern PARALLEL_PATTERN = Pattern.compile("\\[(Full )?GC.*?\\[PS.*?(\\d+)K->(\\d+)K\\((\\d+)K\\).*?(\\d+\\.\\d+) secs\\]");
     private static final Pattern HEAP_PATTERN = Pattern.compile("Heap.*?(\\d+)K->(\\d+)K\\((\\d+)K\\)");
     private static final Pattern MEMORY_PATTERN = Pattern.compile("(\\d+)([KMGT])");
@@ -98,6 +117,8 @@ public class GCLogParser {
                 return "G1GC";
             } else if (line.contains("Z Garbage Collector") || line.contains("ZGC") || line.contains("gc,init] Initializing The Z")) {
                 return "ZGC";
+            } else if (line.contains("UseConcMarkSweepGC") || line.contains("UseCMSInitiatingOccupancyOnly")) {
+                return "CMS";
             } else if (line.contains("CMS") || line.contains("ParNew")) {
                 return "CMS";
             } else if (line.contains("Using Parallel") || line.contains("[PSYoungGen") || line.contains("[ParOldGen")) {
@@ -276,39 +297,141 @@ public class GCLogParser {
     }
     
     /**
-     * 解析CMS事件
+     * 解析CMS事件（支持多种格式）
      */
     private GCEvent parseCMSEvent(String line) {
-        Matcher tsMatcher = TIMESTAMP_PATTERN.matcher(line);
-        if (!tsMatcher.find()) return null;
+        // 提取时间戳：支持格式 "4.856: [GC" 或 "2025-08-05T13:23:18.409+0800: 4.856: [GC"
+        Matcher tsMatcher = CMS_TIMESTAMP_PATTERN.matcher(line);
+        double timestamp = 0;
+        if (tsMatcher.find()) {
+            timestamp = Double.parseDouble(tsMatcher.group(1));
+        }
         
-        double timestamp = Double.parseDouble(tsMatcher.group(1));
+        // 1. 尝试解析 CMS Initial Mark（初始标记）
+        Matcher initialMarkMatcher = CMS_INITIAL_MARK_PATTERN.matcher(line);
+        if (initialMarkMatcher.find()) {
+            double pauseTime = Double.parseDouble(initialMarkMatcher.group(5)) * 1000;
+            long heapUsed = Long.parseLong(initialMarkMatcher.group(3)) * 1024;
+            long heapTotal = Long.parseLong(initialMarkMatcher.group(4)) * 1024;
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType("CMS Initial Mark")
+                    .pauseTime(pauseTime)
+                    .isFullGC(false)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
         
-        Matcher cmsMatcher = CMS_PATTERN.matcher(line);
-        if (!cmsMatcher.find()) return null;
+        // 2. 尝试解析 CMS Remark（重新标记）
+        Matcher remarkMatcher = CMS_REMARK_PATTERN.matcher(line);
+        if (remarkMatcher.find()) {
+            double pauseTime = Double.parseDouble(remarkMatcher.group(5)) * 1000;
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType("CMS Final Remark")
+                    .pauseTime(pauseTime)
+                    .isFullGC(false)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
         
-        String gcType = cmsMatcher.group(1);
-        long before = Long.parseLong(cmsMatcher.group(2)) * 1024;
-        long after = Long.parseLong(cmsMatcher.group(3)) * 1024;
-        long total = Long.parseLong(cmsMatcher.group(4)) * 1024;
-        double pauseTime = Double.parseDouble(cmsMatcher.group(5)) * 1000;
+        // 3. 尝试解析 ParNew 事件（包括 promotion failed）
+        Matcher parNewMatcher = CMS_PARNEW_PATTERN.matcher(line);
+        if (parNewMatcher.find()) {
+            long youngBefore = Long.parseLong(parNewMatcher.group(1)) * 1024;
+            long youngAfter = Long.parseLong(parNewMatcher.group(2)) * 1024;
+            long youngTotal = Long.parseLong(parNewMatcher.group(3)) * 1024;
+            double pauseTime = Double.parseDouble(parNewMatcher.group(4)) * 1000;
+            
+            long heapBefore = Long.parseLong(parNewMatcher.group(5)) * 1024;
+            long heapAfter = Long.parseLong(parNewMatcher.group(6)) * 1024;
+            long heapTotal = Long.parseLong(parNewMatcher.group(7)) * 1024;
+            
+            GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
+                    .before(heapBefore)
+                    .after(heapAfter)
+                    .total(heapTotal)
+                    .build();
+            
+            GCEvent.MemoryChange youngGen = GCEvent.MemoryChange.builder()
+                    .before(youngBefore)
+                    .after(youngAfter)
+                    .total(youngTotal)
+                    .build();
+            
+            // 检查是否是 promotion failed
+            boolean isPromotionFailed = line.contains("promotion failed");
+            String eventType = isPromotionFailed ? "ParNew (promotion failed)" : "ParNew";
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType(eventType)
+                    .pauseTime(pauseTime)
+                    .heapMemory(heapMemory)
+                    .youngGen(youngGen)
+                    .isFullGC(false)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
         
-        boolean isFullGC = line.contains("Full GC");
+        // 4. 尝试解析 Full GC (CMS) 事件
+        Matcher fullGCMatcher = CMS_FULL_PATTERN.matcher(line);
+        if (fullGCMatcher.find()) {
+            long oldBefore = Long.parseLong(fullGCMatcher.group(1)) * 1024;
+            long oldAfter = Long.parseLong(fullGCMatcher.group(2)) * 1024;
+            long oldTotal = Long.parseLong(fullGCMatcher.group(3)) * 1024;
+            double pauseTime = Double.parseDouble(fullGCMatcher.group(4)) * 1000;
+            
+            long heapBefore = Long.parseLong(fullGCMatcher.group(5)) * 1024;
+            long heapAfter = Long.parseLong(fullGCMatcher.group(6)) * 1024;
+            long heapTotal = Long.parseLong(fullGCMatcher.group(7)) * 1024;
+            
+            GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
+                    .before(heapBefore)
+                    .after(heapAfter)
+                    .total(heapTotal)
+                    .build();
+            
+            // 检查失败类型
+            String eventType = "Full GC (CMS)";
+            if (line.contains("concurrent mode failure")) {
+                eventType = "Full GC (Concurrent Mode Failure)";
+            } else if (line.contains("promotion failed")) {
+                eventType = "Full GC (Promotion Failed)";
+            }
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType(eventType)
+                    .pauseTime(pauseTime)
+                    .heapMemory(heapMemory)
+                    .isFullGC(true)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
         
-        GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
-                .before(before)
-                .after(after)
-                .total(total)
-                .build();
+        // 5. 尝试解析 CMS 并发阶段（记录但不作为暂停时间）
+        Matcher concurrentMatcher = CMS_CONCURRENT_PATTERN.matcher(line);
+        if (concurrentMatcher.find()) {
+            String phaseName = concurrentMatcher.group(1);
+            // 并发阶段不计入暂停时间，仅记录用于统计
+            if (concurrentMatcher.group(2) != null) {
+                double concurrentTime = Double.parseDouble(concurrentMatcher.group(2)) * 1000;
+                
+                return GCEvent.builder()
+                        .timestamp((long) (timestamp * 1000))
+                        .eventType(phaseName)
+                        .pauseTime(0.0)  // 并发阶段，无暂停
+                        .concurrentTime(concurrentTime)
+                        .isFullGC(false)
+                        .isLongPause(false)
+                        .build();
+            }
+        }
         
-        return GCEvent.builder()
-                .timestamp((long) (timestamp * 1000))
-                .eventType(isFullGC ? "Full GC" : gcType)
-                .pauseTime(pauseTime)
-                .heapMemory(heapMemory)
-                .isFullGC(isFullGC)
-                .isLongPause(pauseTime > 100)
-                .build();
+        return null;
     }
     
     /**
@@ -818,12 +941,19 @@ public class GCLogParser {
         List<TimeSeriesData.DataPoint> heapTrend = new ArrayList<>();
         List<TimeSeriesData.DataPoint> pauseTrend = new ArrayList<>();
         
-        // 计算相对时间（从第一个事件开始的秒数）
-        long baseTimestamp = events.isEmpty() ? 0 : events.get(0).getTimestamp();
+        if (events.isEmpty()) {
+            return TimeSeriesData.builder()
+                    .heapUsageTrend(heapTrend)
+                    .pauseTimeTrend(pauseTrend)
+                    .build();
+        }
+        
+        // 计算相对时间（从第一个事件开始）
+        long baseTimestamp = events.get(0).getTimestamp();
         
         for (GCEvent event : events) {
-            // 使用相对时间（秒）
-            long relativeTime = (event.getTimestamp() - baseTimestamp) / 1000;
+            // 使用相对时间（毫秒），前端图表使用 type: 'time' 需要毫秒值
+            long relativeTime = event.getTimestamp() - baseTimestamp;
             
             if (event.getHeapMemory() != null) {
                 heapTrend.add(TimeSeriesData.DataPoint.builder()

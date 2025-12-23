@@ -18,7 +18,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { TrendCharts } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 
@@ -36,22 +36,48 @@ let heapChart = null
 let pauseChart = null
 
 onMounted(() => {
+  nextTick(() => {
   initHeapChart()
   initPauseChart()
 })
+})
+
+// 监听数据变化，重新渲染图表
+watch(() => props.timeSeriesData, (newData) => {
+  if (newData && Object.keys(newData).length > 0) {
+    nextTick(() => {
+      updateHeapChart()
+      updatePauseChart()
+    })
+  }
+}, { deep: true })
 
 watch(activeTab, (newTab) => {
+  nextTick(() => {
   if (newTab === 'heap' && heapChart) {
     heapChart.resize()
   } else if (newTab === 'pause' && pauseChart) {
     pauseChart.resize()
   }
+  })
 })
 
 function initHeapChart() {
   if (!heapChartRef.value) return
   
+  if (!heapChart) {
   heapChart = echarts.init(heapChartRef.value)
+  }
+  
+  updateHeapChart()
+  
+  window.addEventListener('resize', () => {
+    heapChart?.resize()
+  })
+}
+
+function updateHeapChart() {
+  if (!heapChart) return
   
   const heapData = props.timeSeriesData?.heapUsageTrend || []
   
@@ -114,17 +140,25 @@ function initHeapChart() {
     }
   }
   
-  heapChart.setOption(option)
-  
-  window.addEventListener('resize', () => {
-    heapChart?.resize()
-  })
+  heapChart.setOption(option, true)  // true = 不合并，完全替换
 }
 
 function initPauseChart() {
   if (!pauseChartRef.value) return
   
+  if (!pauseChart) {
   pauseChart = echarts.init(pauseChartRef.value)
+  }
+  
+  updatePauseChart()
+  
+  window.addEventListener('resize', () => {
+    pauseChart?.resize()
+  })
+}
+
+function updatePauseChart() {
+  if (!pauseChart) return
   
   const pauseData = props.timeSeriesData?.pauseTimeTrend || []
   
@@ -180,11 +214,7 @@ function initPauseChart() {
     }
   }
   
-  pauseChart.setOption(option)
-  
-  window.addEventListener('resize', () => {
-    pauseChart?.resize()
-  })
+  pauseChart.setOption(option, true)  // true = 不合并，完全替换
 }
 
 function formatTimestamp(ms) {
