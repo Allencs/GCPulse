@@ -20,6 +20,9 @@ public class DiagnosisReport {
     // 长暂停信息
     private LongPauseInfo longPauseInfo;
     
+    // 连续 Full GC 信息
+    private ConsecutiveFullGCInfo consecutiveFullGCInfo;
+    
     // 安全点信息
     private SafePointInfo safePointInfo;
     
@@ -49,6 +52,25 @@ public class DiagnosisReport {
         private boolean hasLongPause;
         private double threshold;         // 长暂停阈值（ms）
         private List<GCEvent> longPauseEvents;
+    }
+    
+    @Data
+    @Builder
+    public static class ConsecutiveFullGCInfo {
+        private boolean hasConsecutiveFullGC;
+        private int maxConsecutiveCount;    // 最大连续次数
+        private List<ConsecutiveFullGCSequence> sequences;  // 连续 Full GC 序列
+        private String severity;            // 严重程度 (LOW, MEDIUM, HIGH, CRITICAL)
+        
+        @Data
+        @Builder
+        public static class ConsecutiveFullGCSequence {
+            private int count;              // 连续次数
+            private long startTimestamp;    // 开始时间戳
+            private long endTimestamp;      // 结束时间戳
+            private double totalDuration;   // 总持续时间 (ms)
+            private List<GCEvent> events;   // Full GC 事件列表
+        }
     }
     
     @Data

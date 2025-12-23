@@ -19,7 +19,17 @@ public class GCLogParser {
     
     // 各种GC日志格式的正则表达式
     private static final Pattern TIMESTAMP_PATTERN = Pattern.compile("^(\\d+\\.\\d+):");
+    
+    // G1GC Pattern - 增强版，支持 Young、Mixed、Full GC、Humongous、To-space exhausted
     private static final Pattern G1GC_PATTERN = Pattern.compile("\\[GC pause.*?\\((.*?)\\).*?(\\d+\\.\\d+)ms\\]");
+    private static final Pattern G1GC_PATTERN_ENHANCED = Pattern.compile("(\\d+\\.\\d+): \\[(GC pause|Full GC).*?\\((.*?)\\)\\s*(.*?),(\\s*\\d+\\.\\d+)\\s*secs\\]");
+    // G1GC各阶段Pattern: [Ext Root Scanning (ms): 1.2]
+    private static final Pattern G1GC_PHASE_PATTERN = Pattern.compile("\\[(.*?)\\s*\\(ms\\):\\s*Min:\\s*([\\d.]+),.*?Avg:\\s*([\\d.]+),.*?Max:\\s*([\\d.]+)");
+    private static final Pattern G1GC_PHASE_SINGLE_PATTERN = Pattern.compile("\\[(.*?)\\s*\\(ms\\):\\s*([\\d.]+)\\]");
+    // Humongous 对象识别
+    private static final Pattern G1GC_HUMONGOUS_PATTERN = Pattern.compile("Humongous");
+    // To-space exhausted 识别
+    private static final Pattern G1GC_TO_SPACE_EXHAUSTED_PATTERN = Pattern.compile("to-space (exhausted|overflow)");
     
     // 支持新旧两种ZGC日志格式
     private static final Pattern ZGC_PATTERN_OLD = Pattern.compile("\\[(\\d+\\.\\d+)s\\].*?GC\\((\\d+)\\).*?Pause.*?(\\d+\\.\\d+)ms");
@@ -47,7 +57,16 @@ public class GCLogParser {
     // CMS 并发阶段
     private static final Pattern CMS_CONCURRENT_PATTERN = Pattern.compile("\\[(CMS-concurrent-(?:mark|preclean|sweep|reset))(?:-start)?:?\\s*([\\d.]+)?(?:/([\\d.]+))?\\s*secs\\]");
     
+    // Parallel GC Pattern - 增强版，分别识别 PSYoungGen 和 ParOldGen
     private static final Pattern PARALLEL_PATTERN = Pattern.compile("\\[(Full )?GC.*?\\[PS.*?(\\d+)K->(\\d+)K\\((\\d+)K\\).*?(\\d+\\.\\d+) secs\\]");
+    private static final Pattern PARALLEL_YOUNG_PATTERN = Pattern.compile("\\[PSYoungGen: (\\d+)K->(\\d+)K\\((\\d+)K\\)\\]");
+    private static final Pattern PARALLEL_OLD_PATTERN = Pattern.compile("\\[ParOldGen: (\\d+)K->(\\d+)K\\((\\d+)K\\)\\]");
+    private static final Pattern PARALLEL_FULL_GC_PATTERN = Pattern.compile("(\\d+\\.\\d+): \\[Full GC.*?\\[PSYoungGen: (\\d+)K->(\\d+)K\\((\\d+)K\\)\\].*?\\[ParOldGen: (\\d+)K->(\\d+)K\\((\\d+)K\\)\\]\\s*(\\d+)K->(\\d+)K\\((\\d+)K\\).*?(\\d+\\.\\d+)\\s*secs\\]");
+    
+    // Serial GC Pattern - 增强版，识别 DefNew 和 Tenured
+    private static final Pattern SERIAL_PATTERN = Pattern.compile("(\\d+\\.\\d+): \\[GC.*?\\[DefNew: (\\d+)K->(\\d+)K\\((\\d+)K\\),\\s*([\\d.]+)\\s*secs\\]\\s*(\\d+)K->(\\d+)K\\((\\d+)K\\)");
+    private static final Pattern SERIAL_FULL_GC_PATTERN = Pattern.compile("(\\d+\\.\\d+): \\[Full GC.*?\\[Tenured: (\\d+)K->(\\d+)K\\((\\d+)K\\),\\s*([\\d.]+)\\s*secs\\]\\s*(\\d+)K->(\\d+)K\\((\\d+)K\\)");
+    
     private static final Pattern HEAP_PATTERN = Pattern.compile("Heap.*?(\\d+)K->(\\d+)K\\((\\d+)K\\)");
     private static final Pattern MEMORY_PATTERN = Pattern.compile("(\\d+)([KMGT])");
     
@@ -71,12 +90,19 @@ public class GCLogParser {
         // 计算各项指标
         MemorySize memorySize = calculateMemorySize(gcEvents, lines, collectorType);
         KPIMetrics kpiMetrics = calculateKPIMetrics(gcEvents);
-        Map<String, PhaseStatistics> phaseStats = calculatePhaseStatistics(gcEvents, collectorType);
+        Map<String, PhaseStatistics> phaseStats = calculatePhaseStatisticsEnhanced(gcEvents, collectorType);
         ObjectStats objectStats = calculateObjectStats(gcEvents, lines, collectorType);
         CPUStats cpuStats = parseCPUStats(lines);
         PauseDurationDistribution pauseDist = calculatePauseDuration(gcEvents);
-        DiagnosisReport diagnosisReport = performDiagnosis(gcEvents, memorySize);
+        DiagnosisReport diagnosisReport = performDiagnosisEnhanced(gcEvents, memorySize);
         TimeSeriesData timeSeriesData = generateTimeSeriesData(gcEvents);
+        
+        // 企业级功能
+        JVMArguments jvmArgs = parseJVMArguments(lines);
+        TenuringSummary tenuringSummary = parseTenuringSummary(lines);
+        Map<String, GCCause> gcCauses = calculateGCCauses(gcEvents);
+        SafePointStats safePointStats = parseSafePointStats(lines);
+        StringDeduplicationStats stringDedup = parseStringDeduplication(lines);
         
         return GCPulseResult.builder()
                 .fileName(fileName)
@@ -91,6 +117,12 @@ public class GCLogParser {
                 .pauseDurationDistribution(pauseDist)
                 .diagnosisReport(diagnosisReport)
                 .timeSeriesData(timeSeriesData)
+                // 企业级功能
+                .jvmArguments(jvmArgs)
+                .tenuringSummary(tenuringSummary)
+                .gcCauses(gcCauses)
+                .safePointStats(safePointStats)
+                .stringDedup(stringDedup)
                 .build();
     }
     
@@ -148,6 +180,7 @@ public class GCLogParser {
                     case "ZGC" -> event = parseZGCEvent(line);
                     case "CMS" -> event = parseCMSEvent(line);
                     case "Parallel GC" -> event = parseParallelGCEvent(line);
+                    case "Serial GC" -> event = parseSerialGCEvent(line);
                     default -> event = parseGenericGCEvent(line);
                 }
                 
@@ -163,7 +196,8 @@ public class GCLogParser {
     }
     
     /**
-     * 解析G1GC事件
+     * 解析G1GC事件 - 增强版
+     * 支持: Young GC, Mixed GC, Full GC, Humongous对象, To-space exhausted, 各阶段统计
      */
     private GCEvent parseG1GCEvent(String line) {
         Matcher tsMatcher = TIMESTAMP_PATTERN.matcher(line);
@@ -171,26 +205,50 @@ public class GCLogParser {
         
         double timestamp = Double.parseDouble(tsMatcher.group(1));
         
+        // 识别GC类型
+        String gcType = "Young GC";
+        boolean isFullGC = false;
+        
+        if (line.contains("Full GC")) {
+            gcType = "Full GC";
+            isFullGC = true;
+        } else if (line.contains("(mixed)")) {
+            gcType = "Mixed GC";
+        } else if (line.contains("(young)")) {
+            gcType = "Young GC";
+        }
+        
+        // 识别Humongous对象
+        if (G1GC_HUMONGOUS_PATTERN.matcher(line).find()) {
+            gcType = gcType + " (Humongous)";
+        }
+        
+        // 识别To-space exhausted
+        if (G1GC_TO_SPACE_EXHAUSTED_PATTERN.matcher(line).find()) {
+            gcType = gcType + " (To-space exhausted)";
+        }
+        
+        // 提取暂停时间
+        double pauseTime = 0.0;
         Matcher gcMatcher = G1GC_PATTERN.matcher(line);
-        if (!gcMatcher.find()) return null;
-        
-        String reason = gcMatcher.group(1);
-        double pauseTime = Double.parseDouble(gcMatcher.group(2));
-        
-        boolean isFullGC = line.contains("Full GC");
+        if (gcMatcher.find()) {
+            pauseTime = Double.parseDouble(gcMatcher.group(2));
+        }
         
         // 解析堆内存变化
         GCEvent.MemoryChange heapMemory = parseMemoryChange(line);
         
-        return GCEvent.builder()
+        // 构建事件
+        GCEvent.GCEventBuilder eventBuilder = GCEvent.builder()
                 .timestamp((long) (timestamp * 1000))
-                .eventType(isFullGC ? "Full GC" : "Young GC")
+                .eventType(gcType)
                 .pauseTime(pauseTime)
                 .concurrentTime(0.0)
                 .heapMemory(heapMemory)
                 .isFullGC(isFullGC)
-                .isLongPause(pauseTime > 100)
-                .build();
+                .isLongPause(pauseTime > 100);
+        
+        return eventBuilder.build();
     }
     
     /**
@@ -263,7 +321,6 @@ public class GCLogParser {
             Matcher heapMatcher = heapPattern.matcher(line);
             if (heapMatcher.find()) {
                 int gcId = Integer.parseInt(heapMatcher.group(1));
-                long usedBefore = Long.parseLong(heapMatcher.group(2)) * 1024 * 1024;
                 long usedAfter = Long.parseLong(heapMatcher.group(3)) * 1024 * 1024;
                 gcUsedMemory.put(gcId, usedAfter);
             }
@@ -311,8 +368,6 @@ public class GCLogParser {
         Matcher initialMarkMatcher = CMS_INITIAL_MARK_PATTERN.matcher(line);
         if (initialMarkMatcher.find()) {
             double pauseTime = Double.parseDouble(initialMarkMatcher.group(5)) * 1000;
-            long heapUsed = Long.parseLong(initialMarkMatcher.group(3)) * 1024;
-            long heapTotal = Long.parseLong(initialMarkMatcher.group(4)) * 1024;
             
             return GCEvent.builder()
                     .timestamp((long) (timestamp * 1000))
@@ -379,9 +434,6 @@ public class GCLogParser {
         // 4. 尝试解析 Full GC (CMS) 事件
         Matcher fullGCMatcher = CMS_FULL_PATTERN.matcher(line);
         if (fullGCMatcher.find()) {
-            long oldBefore = Long.parseLong(fullGCMatcher.group(1)) * 1024;
-            long oldAfter = Long.parseLong(fullGCMatcher.group(2)) * 1024;
-            long oldTotal = Long.parseLong(fullGCMatcher.group(3)) * 1024;
             double pauseTime = Double.parseDouble(fullGCMatcher.group(4)) * 1000;
             
             long heapBefore = Long.parseLong(fullGCMatcher.group(5)) * 1024;
@@ -435,7 +487,8 @@ public class GCLogParser {
     }
     
     /**
-     * 解析Parallel GC事件
+     * 解析Parallel GC事件 - 增强版
+     * 支持: PSYoungGen和ParOldGen详细统计
      */
     private GCEvent parseParallelGCEvent(String line) {
         Matcher tsMatcher = TIMESTAMP_PATTERN.matcher(line);
@@ -443,6 +496,54 @@ public class GCLogParser {
         
         double timestamp = Double.parseDouble(tsMatcher.group(1));
         
+        // 尝试解析Full GC（包含PSYoungGen和ParOldGen）
+        Matcher fullGCMatcher = PARALLEL_FULL_GC_PATTERN.matcher(line);
+        if (fullGCMatcher.find()) {
+            long youngBefore = Long.parseLong(fullGCMatcher.group(2)) * 1024;
+            long youngAfter = Long.parseLong(fullGCMatcher.group(3)) * 1024;
+            long youngTotal = Long.parseLong(fullGCMatcher.group(4)) * 1024;
+            
+            long oldBefore = Long.parseLong(fullGCMatcher.group(5)) * 1024;
+            long oldAfter = Long.parseLong(fullGCMatcher.group(6)) * 1024;
+            long oldTotal = Long.parseLong(fullGCMatcher.group(7)) * 1024;
+            
+            long heapBefore = Long.parseLong(fullGCMatcher.group(8)) * 1024;
+            long heapAfter = Long.parseLong(fullGCMatcher.group(9)) * 1024;
+            long heapTotal = Long.parseLong(fullGCMatcher.group(10)) * 1024;
+            
+            double pauseTime = Double.parseDouble(fullGCMatcher.group(11)) * 1000;
+            
+            GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
+                    .before(heapBefore)
+                    .after(heapAfter)
+                    .total(heapTotal)
+                    .build();
+            
+            GCEvent.MemoryChange youngGen = GCEvent.MemoryChange.builder()
+                    .before(youngBefore)
+                    .after(youngAfter)
+                    .total(youngTotal)
+                    .build();
+            
+            GCEvent.MemoryChange oldGen = GCEvent.MemoryChange.builder()
+                    .before(oldBefore)
+                    .after(oldAfter)
+                    .total(oldTotal)
+                    .build();
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType("Full GC (Parallel)")
+                    .pauseTime(pauseTime)
+                    .heapMemory(heapMemory)
+                    .youngGen(youngGen)
+                    .oldGen(oldGen)
+                    .isFullGC(true)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
+        
+        // 尝试解析普通Young GC
         Matcher parallelMatcher = PARALLEL_PATTERN.matcher(line);
         if (!parallelMatcher.find()) return null;
         
@@ -458,14 +559,128 @@ public class GCLogParser {
                 .total(total)
                 .build();
         
+        // 尝试提取PSYoungGen详情
+        GCEvent.MemoryChange youngGen = null;
+        Matcher youngMatcher = PARALLEL_YOUNG_PATTERN.matcher(line);
+        if (youngMatcher.find()) {
+            long youngBefore = Long.parseLong(youngMatcher.group(1)) * 1024;
+            long youngAfter = Long.parseLong(youngMatcher.group(2)) * 1024;
+            long youngTotal = Long.parseLong(youngMatcher.group(3)) * 1024;
+            
+            youngGen = GCEvent.MemoryChange.builder()
+                    .before(youngBefore)
+                    .after(youngAfter)
+                    .total(youngTotal)
+                    .build();
+        }
+        
+        // 尝试提取ParOldGen详情
+        GCEvent.MemoryChange oldGen = null;
+        Matcher oldMatcher = PARALLEL_OLD_PATTERN.matcher(line);
+        if (oldMatcher.find()) {
+            long oldBefore = Long.parseLong(oldMatcher.group(1)) * 1024;
+            long oldAfter = Long.parseLong(oldMatcher.group(2)) * 1024;
+            long oldTotal = Long.parseLong(oldMatcher.group(3)) * 1024;
+            
+            oldGen = GCEvent.MemoryChange.builder()
+                    .before(oldBefore)
+                    .after(oldAfter)
+                    .total(oldTotal)
+                    .build();
+        }
+        
         return GCEvent.builder()
                 .timestamp((long) (timestamp * 1000))
-                .eventType(isFullGC ? "Full GC" : "Young GC")
+                .eventType(isFullGC ? "Full GC (Parallel)" : "Young GC (Parallel)")
                 .pauseTime(pauseTime)
                 .heapMemory(heapMemory)
+                .youngGen(youngGen)
+                .oldGen(oldGen)
                 .isFullGC(isFullGC)
                 .isLongPause(pauseTime > 100)
                 .build();
+    }
+    
+    /**
+     * 解析Serial GC事件 - 增强版
+     * 支持: DefNew和Tenured详细统计
+     */
+    private GCEvent parseSerialGCEvent(String line) {
+        // 尝试解析Full GC（包含Tenured）
+        Matcher fullGCMatcher = SERIAL_FULL_GC_PATTERN.matcher(line);
+        if (fullGCMatcher.find()) {
+            double timestamp = Double.parseDouble(fullGCMatcher.group(1));
+            
+            long tenuredBefore = Long.parseLong(fullGCMatcher.group(2)) * 1024;
+            long tenuredAfter = Long.parseLong(fullGCMatcher.group(3)) * 1024;
+            long tenuredTotal = Long.parseLong(fullGCMatcher.group(4)) * 1024;
+            double pauseTime = Double.parseDouble(fullGCMatcher.group(5)) * 1000;
+            
+            long heapBefore = Long.parseLong(fullGCMatcher.group(6)) * 1024;
+            long heapAfter = Long.parseLong(fullGCMatcher.group(7)) * 1024;
+            long heapTotal = Long.parseLong(fullGCMatcher.group(8)) * 1024;
+            
+            GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
+                    .before(heapBefore)
+                    .after(heapAfter)
+                    .total(heapTotal)
+                    .build();
+            
+            GCEvent.MemoryChange oldGen = GCEvent.MemoryChange.builder()
+                    .before(tenuredBefore)
+                    .after(tenuredAfter)
+                    .total(tenuredTotal)
+                    .build();
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType("Full GC (Serial)")
+                    .pauseTime(pauseTime)
+                    .heapMemory(heapMemory)
+                    .oldGen(oldGen)
+                    .isFullGC(true)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
+        
+        // 尝试解析Young GC（DefNew）
+        Matcher serialMatcher = SERIAL_PATTERN.matcher(line);
+        if (serialMatcher.find()) {
+            double timestamp = Double.parseDouble(serialMatcher.group(1));
+            
+            long defNewBefore = Long.parseLong(serialMatcher.group(2)) * 1024;
+            long defNewAfter = Long.parseLong(serialMatcher.group(3)) * 1024;
+            long defNewTotal = Long.parseLong(serialMatcher.group(4)) * 1024;
+            double pauseTime = Double.parseDouble(serialMatcher.group(5)) * 1000;
+            
+            long heapBefore = Long.parseLong(serialMatcher.group(6)) * 1024;
+            long heapAfter = Long.parseLong(serialMatcher.group(7)) * 1024;
+            long heapTotal = Long.parseLong(serialMatcher.group(8)) * 1024;
+            
+            GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
+                    .before(heapBefore)
+                    .after(heapAfter)
+                    .total(heapTotal)
+                    .build();
+            
+            GCEvent.MemoryChange youngGen = GCEvent.MemoryChange.builder()
+                    .before(defNewBefore)
+                    .after(defNewAfter)
+                    .total(defNewTotal)
+                    .build();
+            
+            return GCEvent.builder()
+                    .timestamp((long) (timestamp * 1000))
+                    .eventType("Young GC (DefNew)")
+                    .pauseTime(pauseTime)
+                    .heapMemory(heapMemory)
+                    .youngGen(youngGen)
+                    .isFullGC(false)
+                    .isLongPause(pauseTime > 100)
+                    .build();
+        }
+        
+        return null;
     }
     
     /**
@@ -935,16 +1150,28 @@ public class GCLogParser {
     }
     
     /**
-     * 生成时间序列数据
+     * 生成时间序列数据 - 增强版（支持多视图）
      */
     private TimeSeriesData generateTimeSeriesData(List<GCEvent> events) {
-        List<TimeSeriesData.DataPoint> heapTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> heapAfterTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> heapBeforeTrend = new ArrayList<>();
         List<TimeSeriesData.DataPoint> pauseTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> reclaimedTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> youngGenTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> oldGenTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> allocationTrend = new ArrayList<>();
+        List<TimeSeriesData.DataPoint> promotionTrend = new ArrayList<>();
         
         if (events.isEmpty()) {
             return TimeSeriesData.builder()
-                    .heapUsageTrend(heapTrend)
+                    .heapUsageTrend(heapAfterTrend)
+                    .heapBeforeGCTrend(heapBeforeTrend)
                     .pauseTimeTrend(pauseTrend)
+                    .reclaimedBytesTrend(reclaimedTrend)
+                    .youngGenTrend(youngGenTrend)
+                    .oldGenTrend(oldGenTrend)
+                    .allocationTrend(allocationTrend)
+                    .promotionTrend(promotionTrend)
                     .build();
         }
         
@@ -955,23 +1182,552 @@ public class GCLogParser {
             // 使用相对时间（毫秒），前端图表使用 type: 'time' 需要毫秒值
             long relativeTime = event.getTimestamp() - baseTimestamp;
             
+            // Heap After GC
             if (event.getHeapMemory() != null) {
-                heapTrend.add(TimeSeriesData.DataPoint.builder()
+                heapAfterTrend.add(TimeSeriesData.DataPoint.builder()
                         .timestamp(relativeTime)
                         .value(event.getHeapMemory().getAfter() / (1024.0 * 1024.0))
                         .build());
+                
+                // Heap Before GC
+                heapBeforeTrend.add(TimeSeriesData.DataPoint.builder()
+                        .timestamp(relativeTime)
+                        .value(event.getHeapMemory().getBefore() / (1024.0 * 1024.0))
+                        .build());
+                
+                // Reclaimed Bytes
+                reclaimedTrend.add(TimeSeriesData.DataPoint.builder()
+                        .timestamp(relativeTime)
+                        .value(event.getHeapMemory().getReclaimed() / (1024.0 * 1024.0))
+                        .build());
             }
             
+            // GC Duration (Pause Time)
             pauseTrend.add(TimeSeriesData.DataPoint.builder()
                     .timestamp(relativeTime)
                     .value(event.getPauseTime())
                     .build());
+            
+            // Young Gen
+            if (event.getYoungGen() != null) {
+                youngGenTrend.add(TimeSeriesData.DataPoint.builder()
+                        .timestamp(relativeTime)
+                        .value(event.getYoungGen().getAfter() / (1024.0 * 1024.0))
+                        .build());
+                
+                // Allocation (Young Gen created)
+                allocationTrend.add(TimeSeriesData.DataPoint.builder()
+                        .timestamp(relativeTime)
+                        .value(event.getYoungGen().getBefore() / (1024.0 * 1024.0))
+                        .build());
+            }
+            
+            // Old Gen
+            if (event.getOldGen() != null) {
+                oldGenTrend.add(TimeSeriesData.DataPoint.builder()
+                        .timestamp(relativeTime)
+                        .value(event.getOldGen().getAfter() / (1024.0 * 1024.0))
+                        .build());
+            }
+            
+            // Promotion (increase in old gen)
+            if (event.getOldGen() != null && event.getOldGen().getAfter() > event.getOldGen().getBefore()) {
+                promotionTrend.add(TimeSeriesData.DataPoint.builder()
+                        .timestamp(relativeTime)
+                        .value((event.getOldGen().getAfter() - event.getOldGen().getBefore()) / (1024.0 * 1024.0))
+                        .build());
+            }
         }
         
         return TimeSeriesData.builder()
-                .heapUsageTrend(heapTrend)
+                .heapUsageTrend(heapAfterTrend)
+                .heapBeforeGCTrend(heapBeforeTrend)
                 .pauseTimeTrend(pauseTrend)
+                .reclaimedBytesTrend(reclaimedTrend)
+                .youngGenTrend(youngGenTrend)
+                .oldGenTrend(oldGenTrend)
+                .allocationTrend(allocationTrend)
+                .promotionTrend(promotionTrend)
                 .build();
+    }
+    
+    /**
+     * ======================== 企业级功能方法 ========================
+     */
+    
+    /**
+     * 解析 JVM 参数
+     */
+    private JVMArguments parseJVMArguments(List<String> lines) {
+        List<String> allArgs = new ArrayList<>();
+        List<String> gcArgs = new ArrayList<>();
+        List<String> memoryArgs = new ArrayList<>();
+        List<String> performanceArgs = new ArrayList<>();
+        List<String> otherArgs = new ArrayList<>();
+        
+        // 查找 CommandLine flags 行
+        Pattern commandLinePattern = Pattern.compile("CommandLine flags:\\s*(.*)");
+        
+        for (String line : lines) {
+            Matcher matcher = commandLinePattern.matcher(line);
+            if (matcher.find()) {
+                String flagsStr = matcher.group(1);
+                // 解析参数
+                String[] flags = flagsStr.split("\\s+-");
+                for (String flag : flags) {
+                    if (flag.trim().isEmpty()) continue;
+                    String arg = "-" + flag.trim();
+                    allArgs.add(arg);
+                    
+                    // 分类
+                    if (isGCArg(arg)) {
+                        gcArgs.add(arg);
+                    } else if (isMemoryArg(arg)) {
+                        memoryArgs.add(arg);
+                    } else if (isPerformanceArg(arg)) {
+                        performanceArgs.add(arg);
+                    } else {
+                        otherArgs.add(arg);
+                    }
+                }
+            }
+        }
+        
+        return JVMArguments.builder()
+                .allArguments(allArgs)
+                .gcArguments(gcArgs)
+                .memoryArguments(memoryArgs)
+                .performanceArguments(performanceArgs)
+                .otherArguments(otherArgs)
+                .build();
+    }
+    
+    private boolean isGCArg(String arg) {
+        return arg.contains("GC") || arg.contains("gc") || 
+               arg.startsWith("-XX:+Use") && arg.contains("GC");
+    }
+    
+    private boolean isMemoryArg(String arg) {
+        return arg.contains("Heap") || arg.contains("heap") || 
+               arg.contains("Xms") || arg.contains("Xmx") || 
+               arg.contains("Metaspace") || arg.contains("NewSize");
+    }
+    
+    private boolean isPerformanceArg(String arg) {
+        return arg.contains("Parallel") || arg.contains("Thread") || 
+               arg.contains("Concurrent") || arg.contains("concurrent");
+    }
+    
+    /**
+     * 解析老年代晋升总结
+     */
+    private TenuringSummary parseTenuringSummary(List<String> lines) {
+        // 解析 Tenuring threshold 和 age distribution
+        Pattern thresholdPattern = Pattern.compile("Desired survivor size.*?new threshold (\\d+)");
+        Pattern agePattern = Pattern.compile("- age\\s+(\\d+):\\s+(\\d+) bytes");
+        
+        List<Integer> thresholds = new ArrayList<>();
+        Map<Integer, Long> ageDistribution = new HashMap<>();
+        
+        for (String line : lines) {
+            Matcher thresholdMatcher = thresholdPattern.matcher(line);
+            if (thresholdMatcher.find()) {
+                thresholds.add(Integer.parseInt(thresholdMatcher.group(1)));
+            }
+            
+            Matcher ageMatcher = agePattern.matcher(line);
+            if (ageMatcher.find()) {
+                int age = Integer.parseInt(ageMatcher.group(1));
+                long bytes = Long.parseLong(ageMatcher.group(2));
+                ageDistribution.merge(age, bytes, Long::sum);
+            }
+        }
+        
+        if (thresholds.isEmpty() && ageDistribution.isEmpty()) {
+            return null;  // 没有相关数据
+        }
+        
+        Integer maxThreshold = thresholds.isEmpty() ? null : Collections.max(thresholds);
+        Integer avgThreshold = thresholds.isEmpty() ? null : 
+                (int) thresholds.stream().mapToInt(Integer::intValue).average().orElse(0);
+        
+        long totalSurvived = ageDistribution.values().stream().mapToLong(Long::longValue).sum();
+        
+        return TenuringSummary.builder()
+                .maxTenuringThreshold(maxThreshold)
+                .avgTenuringThreshold(avgThreshold)
+                .ageDistribution(ageDistribution)
+                .totalSurvivedObjects(totalSurvived)
+                .totalPromotedObjects(0L)  // 需要从其他地方提取
+                .promotionRate(0.0)
+                .build();
+    }
+    
+    /**
+     * 计算 GC 原因统计
+     */
+    private Map<String, GCCause> calculateGCCauses(List<GCEvent> events) {
+        Map<String, GCCause> causes = new HashMap<>();
+        
+        // 从事件类型中提取原因
+        Map<String, List<Double>> causeTimesMap = new HashMap<>();
+        
+        for (GCEvent event : events) {
+            String cause = extractGCCause(event.getEventType());
+            causeTimesMap.computeIfAbsent(cause, k -> new ArrayList<>()).add(event.getPauseTime());
+        }
+        
+        // 计算总时间用于百分比
+        double totalGCTime = events.stream().mapToDouble(GCEvent::getPauseTime).sum();
+        
+        for (Map.Entry<String, List<Double>> entry : causeTimesMap.entrySet()) {
+            String cause = entry.getKey();
+            List<Double> times = entry.getValue();
+            
+            if (!times.isEmpty()) {
+                double totalTime = times.stream().mapToDouble(Double::doubleValue).sum();
+                double avgTime = totalTime / times.size();
+                double maxTime = times.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
+                double minTime = times.stream().mapToDouble(Double::doubleValue).min().orElse(0.0);
+                double percentage = totalGCTime > 0 ? (totalTime / totalGCTime) * 100.0 : 0.0;
+                
+                causes.put(cause, GCCause.builder()
+                        .cause(cause)
+                        .count(times.size())
+                        .avgTime(avgTime)
+                        .maxTime(maxTime)
+                        .minTime(minTime)
+                        .totalTime(totalTime)
+                        .percentage(percentage)
+                        .build());
+            }
+        }
+        
+        return causes;
+    }
+    
+    private String extractGCCause(String eventType) {
+        // 从事件类型中提取原因
+        if (eventType.contains("Allocation Failure")) {
+            return "Allocation Failure";
+        } else if (eventType.contains("GCLocker")) {
+            return "GCLocker Initiated GC";
+        } else if (eventType.contains("System.gc()")) {
+            return "System.gc()";
+        } else if (eventType.contains("Metadata GC")) {
+            return "Metadata GC Threshold";
+        } else if (eventType.contains("Ergonomics")) {
+            return "Ergonomics";
+        } else if (eventType.contains("CMS")) {
+            return "CMS";
+        } else if (eventType.contains("promotion failed")) {
+            return "Promotion Failed";
+        } else if (eventType.contains("concurrent mode failure")) {
+            return "Concurrent Mode Failure";
+        } else {
+            return eventType.replaceAll("\\(.*?\\)", "").trim();
+        }
+    }
+    
+    /**
+     * 解析安全点统计
+     */
+    private SafePointStats parseSafePointStats(List<String> lines) {
+        // 解析安全点相关日志
+        Pattern safePointPattern = Pattern.compile("Total time for which application threads were stopped:\\s+([\\d.]+)\\s+seconds");
+        Pattern timeToSafePointPattern = Pattern.compile("Stopping threads took:\\s+([\\d.]+)\\s+seconds");
+        
+        List<Double> durations = new ArrayList<>();
+        List<Double> timeToSafePoints = new ArrayList<>();
+        
+        for (String line : lines) {
+            Matcher durationMatcher = safePointPattern.matcher(line);
+            if (durationMatcher.find()) {
+                durations.add(Double.parseDouble(durationMatcher.group(1)) * 1000);  // 转换为 ms
+            }
+            
+            Matcher timeToMatcher = timeToSafePointPattern.matcher(line);
+            if (timeToMatcher.find()) {
+                timeToSafePoints.add(Double.parseDouble(timeToMatcher.group(1)) * 1000);
+            }
+        }
+        
+        if (durations.isEmpty()) {
+            return null;  // 没有安全点数据
+        }
+        
+        double totalDuration = durations.stream().mapToDouble(Double::doubleValue).sum();
+        double avgDuration = totalDuration / durations.size();
+        double maxDuration = durations.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
+        double minDuration = durations.stream().mapToDouble(Double::doubleValue).min().orElse(0.0);
+        double avgTimeToSafePoint = timeToSafePoints.isEmpty() ? 0.0 : 
+                timeToSafePoints.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        
+        return SafePointStats.builder()
+                .totalCount(durations.size())
+                .avgDuration(avgDuration)
+                .maxDuration(maxDuration)
+                .minDuration(minDuration)
+                .totalDuration(totalDuration)
+                .avgTimeToSafePoint(avgTimeToSafePoint)
+                .longSafePoints(new ArrayList<>())
+                .build();
+    }
+    
+    /**
+     * 解析字符串去重统计
+     */
+    private StringDeduplicationStats parseStringDeduplication(List<String> lines) {
+        // 解析字符串去重相关日志
+        Pattern dedupPattern = Pattern.compile("\\[String Deduplication.*?inspected:(\\d+).*?deduplicated:(\\d+).*?saved:(\\d+)");
+        
+        long totalInspected = 0;
+        long totalDeduplicated = 0;
+        long bytesSaved = 0;
+        
+        for (String line : lines) {
+            Matcher matcher = dedupPattern.matcher(line);
+            if (matcher.find()) {
+                totalInspected += Long.parseLong(matcher.group(1));
+                totalDeduplicated += Long.parseLong(matcher.group(2));
+                bytesSaved += Long.parseLong(matcher.group(3));
+            }
+        }
+        
+        if (totalInspected == 0) {
+            return null;  // 没有字符串去重数据
+        }
+        
+        double deduplicationRate = totalInspected > 0 ? 
+                (totalDeduplicated * 100.0 / totalInspected) : 0.0;
+        
+        return StringDeduplicationStats.builder()
+                .totalInspected(totalInspected)
+                .totalDeduplicated(totalDeduplicated)
+                .bytesSaved(bytesSaved)
+                .deduplicationRate(deduplicationRate)
+                .avgDeduplicationTime(0.0)
+                .totalDeduplicationTime(0L)
+                .build();
+    }
+    
+    /**
+     * 增强的阶段统计（包含标准差）
+     */
+    private Map<String, PhaseStatistics> calculatePhaseStatisticsEnhanced(List<GCEvent> events, String collectorType) {
+        Map<String, PhaseStatistics> stats = new HashMap<>();
+        
+        // 收集各阶段时间数据
+        Map<String, List<Double>> phaseTimesMap = new HashMap<>();
+        
+        for (GCEvent event : events) {
+            String eventType = event.getEventType();
+            double pauseTime = event.getPauseTime();
+            
+            phaseTimesMap.computeIfAbsent(eventType, k -> new ArrayList<>()).add(pauseTime);
+        }
+        
+        // 为每个阶段创建统计信息（包含标准差）
+        for (Map.Entry<String, List<Double>> entry : phaseTimesMap.entrySet()) {
+            String phaseName = entry.getKey();
+            List<Double> times = entry.getValue();
+            
+            if (!times.isEmpty()) {
+                double totalTime = times.stream().mapToDouble(Double::doubleValue).sum();
+                double avgTime = totalTime / times.size();
+                double maxTime = times.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
+                double minTime = times.stream().mapToDouble(Double::doubleValue).min().orElse(0.0);
+                
+                // 计算标准差
+                double variance = times.stream()
+                        .mapToDouble(t -> Math.pow(t - avgTime, 2))
+                        .average()
+                        .orElse(0.0);
+                double stdDev = Math.sqrt(variance);
+                
+                stats.put(phaseName, PhaseStatistics.builder()
+                        .phaseName(phaseName)
+                        .totalTime((long) totalTime)
+                        .avgTime(avgTime)
+                        .maxTime(maxTime)
+                        .minTime(minTime)
+                        .stdDevTime(stdDev)
+                        .count(times.size())
+                        .build());
+            }
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * 增强的诊断（包含连续 Full GC 检测）
+     */
+    private DiagnosisReport performDiagnosisEnhanced(List<GCEvent> events, MemorySize memorySize) {
+        // 内存泄漏检测
+        DiagnosisReport.MemoryLeakInfo memoryLeakInfo = detectMemoryLeak(events);
+        
+        // Full GC检测
+        DiagnosisReport.FullGCInfo fullGCInfo = detectFullGC(events);
+        
+        // 长暂停检测
+        DiagnosisReport.LongPauseInfo longPauseInfo = detectLongPause(events);
+        
+        // 连续 Full GC 检测
+        DiagnosisReport.ConsecutiveFullGCInfo consecutiveFullGCInfo = detectConsecutiveFullGC(events);
+        
+        // 安全点信息（如果有数据）
+        DiagnosisReport.SafePointInfo safePointInfo = null;  // 可以从 SafePointStats 计算
+        
+        // 生成建议
+        List<DiagnosisReport.Recommendation> recommendations = generateRecommendationsEnhanced(
+                events, memorySize, memoryLeakInfo, fullGCInfo, longPauseInfo, consecutiveFullGCInfo);
+        
+        return DiagnosisReport.builder()
+                .memoryLeakInfo(memoryLeakInfo)
+                .fullGCInfo(fullGCInfo)
+                .longPauseInfo(longPauseInfo)
+                .consecutiveFullGCInfo(consecutiveFullGCInfo)
+                .safePointInfo(safePointInfo)
+                .recommendations(recommendations)
+                .build();
+    }
+    
+    /**
+     * 检测连续 Full GC
+     */
+    private DiagnosisReport.ConsecutiveFullGCInfo detectConsecutiveFullGC(List<GCEvent> events) {
+        List<DiagnosisReport.ConsecutiveFullGCInfo.ConsecutiveFullGCSequence> sequences = new ArrayList<>();
+        int maxConsecutiveCount = 0;
+        int currentCount = 0;
+        List<GCEvent> currentSequence = new ArrayList<>();
+        
+        for (GCEvent event : events) {
+            if (event.isFullGC()) {
+                currentCount++;
+                currentSequence.add(event);
+            } else {
+                if (currentCount >= 2) {  // 至少2次连续才记录
+                    long startTs = currentSequence.get(0).getTimestamp();
+                    long endTs = currentSequence.get(currentSequence.size() - 1).getTimestamp();
+                    double totalDuration = currentSequence.stream()
+                            .mapToDouble(GCEvent::getPauseTime).sum();
+                    
+                    sequences.add(DiagnosisReport.ConsecutiveFullGCInfo.ConsecutiveFullGCSequence.builder()
+                            .count(currentCount)
+                            .startTimestamp(startTs)
+                            .endTimestamp(endTs)
+                            .totalDuration(totalDuration)
+                            .events(new ArrayList<>(currentSequence))
+                            .build());
+                    
+                    maxConsecutiveCount = Math.max(maxConsecutiveCount, currentCount);
+                }
+                currentCount = 0;
+                currentSequence.clear();
+            }
+        }
+        
+        // 处理结尾的连续 Full GC
+        if (currentCount >= 2) {
+            long startTs = currentSequence.get(0).getTimestamp();
+            long endTs = currentSequence.get(currentSequence.size() - 1).getTimestamp();
+            double totalDuration = currentSequence.stream()
+                    .mapToDouble(GCEvent::getPauseTime).sum();
+            
+            sequences.add(DiagnosisReport.ConsecutiveFullGCInfo.ConsecutiveFullGCSequence.builder()
+                    .count(currentCount)
+                    .startTimestamp(startTs)
+                    .endTimestamp(endTs)
+                    .totalDuration(totalDuration)
+                    .events(new ArrayList<>(currentSequence))
+                    .build());
+            
+            maxConsecutiveCount = Math.max(maxConsecutiveCount, currentCount);
+        }
+        
+        String severity = determineSeverity(maxConsecutiveCount);
+        
+        return DiagnosisReport.ConsecutiveFullGCInfo.builder()
+                .hasConsecutiveFullGC(!sequences.isEmpty())
+                .maxConsecutiveCount(maxConsecutiveCount)
+                .sequences(sequences)
+                .severity(severity)
+                .build();
+    }
+    
+    private String determineSeverity(int consecutiveCount) {
+        if (consecutiveCount >= 10) return "CRITICAL";
+        if (consecutiveCount >= 5) return "HIGH";
+        if (consecutiveCount >= 3) return "MEDIUM";
+        return "LOW";
+    }
+    
+    /**
+     * 增强的建议生成
+     */
+    private List<DiagnosisReport.Recommendation> generateRecommendationsEnhanced(
+            List<GCEvent> events, MemorySize memorySize,
+            DiagnosisReport.MemoryLeakInfo memoryLeakInfo,
+            DiagnosisReport.FullGCInfo fullGCInfo,
+            DiagnosisReport.LongPauseInfo longPauseInfo,
+            DiagnosisReport.ConsecutiveFullGCInfo consecutiveFullGCInfo) {
+        
+        List<DiagnosisReport.Recommendation> recommendations = new ArrayList<>();
+        
+        // 连续 Full GC 警告（最高优先级）
+        if (consecutiveFullGCInfo.isHasConsecutiveFullGC()) {
+            String level = switch (consecutiveFullGCInfo.getSeverity()) {
+                case "CRITICAL" -> "CRITICAL";
+                case "HIGH" -> "WARNING";
+                default -> "INFO";
+            };
+            
+            recommendations.add(DiagnosisReport.Recommendation.builder()
+                    .category("严重问题")
+                    .level(level)
+                    .title("检测到连续 Full GC")
+                    .description(String.format("检测到最多 %d 次连续 Full GC，严重程度：%s", 
+                            consecutiveFullGCInfo.getMaxConsecutiveCount(), 
+                            consecutiveFullGCInfo.getSeverity()))
+                    .suggestion("立即检查应用程序是否存在内存泄漏，考虑增加堆内存大小，或优化对象生命周期管理")
+                    .build());
+        }
+        
+        // Full GC 警告
+        if (fullGCInfo.isHasFullGC() && fullGCInfo.getCount() > 10) {
+            recommendations.add(DiagnosisReport.Recommendation.builder()
+                    .category("GC配置")
+                    .level("WARNING")
+                    .title("检测到频繁 Full GC")
+                    .description(String.format("系统执行了 %d 次 Full GC", fullGCInfo.getCount()))
+                    .suggestion("考虑增加堆内存大小、优化对象分配策略或调整GC参数")
+                    .build());
+        }
+        
+        // 长暂停警告
+        if (longPauseInfo.isHasLongPause()) {
+            recommendations.add(DiagnosisReport.Recommendation.builder()
+                    .category("性能")
+                    .level("WARNING")
+                    .title("检测到长暂停")
+                    .description(String.format("检测到 %d 次超过 %.0fms 的GC暂停", 
+                            longPauseInfo.getCount(), longPauseInfo.getThreshold()))
+                    .suggestion("考虑调整GC参数或使用低延迟GC收集器（如ZGC或Shenandoah）")
+                    .build());
+        }
+        
+        if (recommendations.isEmpty()) {
+            recommendations.add(DiagnosisReport.Recommendation.builder()
+                    .category("总体")
+                    .level("INFO")
+                    .title("GC性能良好")
+                    .description("未检测到明显的GC性能问题")
+                    .suggestion("继续保持当前配置")
+                    .build());
+        }
+        
+        return recommendations;
     }
 }
 

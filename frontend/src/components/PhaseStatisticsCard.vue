@@ -2,25 +2,56 @@
   <div class="analysis-card slide-in-up">
     <div class="card-title">
       <el-icon><DataLine /></el-icon>
-      GC阶段统计
+      GC 阶段统计
+      <span class="subtitle">（Phase Statistics）</span>
     </div>
     
     <div v-if="hasPhaseData" class="phase-content">
-      <div class="phase-chart" ref="chartRef"></div>
+      <!-- 双图表布局 -->
+      <el-row :gutter="20" class="charts-row">
+        <el-col :xs="24" :md="12">
+          <div class="chart-container">
+            <h4 class="chart-title">平均时间 (Avg Time)</h4>
+            <div class="chart" ref="avgChartRef"></div>
+          </div>
+        </el-col>
+        <el-col :xs="24" :md="12">
+          <div class="chart-container">
+            <h4 class="chart-title">累计时间占比 (Cumulative Time)</h4>
+            <div class="chart" ref="pieChartRef"></div>
+          </div>
+        </el-col>
+      </el-row>
       
-      <el-table :data="phaseTableData" style="width: 100%" stripe>
-        <el-table-column prop="phaseName" label="阶段名称" width="200" />
-        <el-table-column prop="avgTime" label="平均时间" width="120">
-          <template #default="scope">
-            {{ formatTime(scope.row.avgTime) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="count" label="执行次数" width="100" />
-        <el-table-column prop="totalTime" label="总时间">
+      <!-- 详细统计表格 -->
+      <el-table :data="phaseTableData" style="width: 100%" stripe border>
+        <el-table-column prop="phaseName" label="阶段名称" min-width="180" fixed />
+        <el-table-column label="总时间 (Total Time)" min-width="140">
           <template #default="scope">
             {{ formatDuration(scope.row.totalTime) }}
           </template>
         </el-table-column>
+        <el-table-column label="平均时间 (Avg Time)" min-width="120">
+          <template #default="scope">
+            {{ formatTime(scope.row.avgTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="标准差 (Std Dev)" min-width="120">
+          <template #default="scope">
+            {{ formatTime(scope.row.stdDevTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="最小时间 (Min Time)" min-width="120">
+          <template #default="scope">
+            {{ formatTime(scope.row.minTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="最大时间 (Max Time)" min-width="120">
+          <template #default="scope">
+            {{ formatTime(scope.row.maxTime) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="count" label="执行次数 (Count)" width="110" align="center" />
       </el-table>
     </div>
     
@@ -29,7 +60,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { DataLine } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 
@@ -40,7 +71,10 @@ const props = defineProps({
   }
 })
 
-const chartRef = ref(null)
+const avgChartRef = ref(null)
+const pieChartRef = ref(null)
+let avgChart = null
+let pieChart = null
 
 const hasPhaseData = computed(() => {
   return Object.keys(props.phaseStatistics || {}).length > 0
@@ -48,40 +82,128 @@ const hasPhaseData = computed(() => {
 
 const phaseTableData = computed(() => {
   if (!props.phaseStatistics) return []
-  return Object.values(props.phaseStatistics)
+  return Object.values(props.phaseStatistics).sort((a, b) => b.totalTime - a.totalTime)
 })
 
 onMounted(() => {
   if (hasPhaseData.value) {
-    initChart()
+    nextTick(() => {
+      initCharts()
+    })
   }
 })
 
-function initChart() {
-  if (!chartRef.value) return
+watch(() => props.phaseStatistics, (newData) => {
+  if (newData && Object.keys(newData).length > 0) {
+    nextTick(() => {
+      initCharts()
+    })
+  }
+}, { deep: true })
+
+function initCharts() {
+  initAvgChart()
+  initPieChart()
+}
+
+function initAvgChart() {
+  if (!avgChartRef.value) return
   
-  const chart = echarts.init(chartRef.value)
+  if (!avgChart) {
+    avgChart = echarts.init(avgChartRef.value)
+  }
+  
+  const phaseData = Object.values(props.phaseStatistics || {}).sort((a, b) => b.avgTime - a.avgTime)
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'shadow'
+      },
+      formatter: (params) => {
+        const param = params[0]
+        return `${param.name}<br/>平均时间: ${param.value.toFixed(3)} ms`
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '10%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'value',
+      name: '时间 (ms)',
+      axisLabel: {
+        formatter: '{value}'
+      }
+    },
+    yAxis: {
+      type: 'category',
+      data: phaseData.map(phase => phase.phaseName),
+      axisLabel: {
+        fontSize: 11,
+        interval: 0
+      }
+    },
+    series: [
+      {
+        name: '平均时间',
+        type: 'bar',
+        data: phaseData.map(phase => phase.avgTime || 0),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#409EFF' },
+            { offset: 1, color: '#67C23A' }
+          ])
+        },
+        label: {
+          show: true,
+          position: 'right',
+          formatter: '{c} ms',
+          fontSize: 10
+        }
+      }
+    ]
+  }
+  
+  avgChart.setOption(option, true)
+  
+  window.addEventListener('resize', () => {
+    avgChart?.resize()
+  })
+}
+
+function initPieChart() {
+  if (!pieChartRef.value) return
+  
+  if (!pieChart) {
+    pieChart = echarts.init(pieChartRef.value)
+  }
+  
   const phaseData = Object.values(props.phaseStatistics || {})
   
   const option = {
-    title: {
-      text: 'GC阶段平均时间分布',
-      left: 'center',
-      textStyle: {
-        fontSize: 14,
-        fontWeight: 500
-      }
-    },
     tooltip: {
       trigger: 'item',
       formatter: (params) => {
-        return `${params.name}<br/>平均时间: ${params.value.toFixed(2)} ms<br/>占比: ${params.percent}%`
+        const totalSeconds = (params.value / 1000).toFixed(2)
+        return `${params.name}<br/>累计时间: ${totalSeconds} s<br/>占比: ${params.percent}%`
       }
     },
     legend: {
       orient: 'vertical',
       left: 'left',
-      top: 'middle'
+      top: 'middle',
+      textStyle: {
+        fontSize: 11
+      },
+      formatter: (name) => {
+        const maxLength = 25
+        return name.length > maxLength ? name.substring(0, maxLength) + '...' : name
+      }
     },
     series: [
       {
@@ -97,20 +219,28 @@ function initChart() {
         },
         label: {
           show: true,
-          formatter: '{b}: {d}%'
+          formatter: '{d}%',
+          fontSize: 11
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: 14,
+            fontWeight: 'bold'
+          }
         },
         data: phaseData.map(phase => ({
           name: phase.phaseName,
-          value: phase.avgTime || 0
+          value: phase.totalTime || 0
         }))
       }
     ]
   }
   
-  chart.setOption(option)
+  pieChart.setOption(option, true)
   
   window.addEventListener('resize', () => {
-    chart.resize()
+    pieChart?.resize()
   })
 }
 
@@ -145,11 +275,54 @@ function formatDuration(ms) {
 </script>
 
 <style lang="scss" scoped>
+.subtitle {
+  font-size: 12px;
+  color: #909399;
+  font-weight: normal;
+  margin-left: 10px;
+}
+
 .phase-content {
-  .phase-chart {
-    width: 100%;
-    height: 400px;
+  .charts-row {
     margin-bottom: 24px;
+    
+    .chart-container {
+      background: #fff;
+      border: 1px solid #e4e7ed;
+      border-radius: 8px;
+      padding: 16px;
+      
+      .chart-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: #303133;
+        margin: 0 0 12px 0;
+        text-align: center;
+      }
+      
+      .chart {
+        width: 100%;
+        height: 350px;
+      }
+    }
+  }
+  
+  .el-table {
+    margin-top: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .phase-content {
+    .charts-row {
+      .chart-container {
+        margin-bottom: 16px;
+        
+        .chart {
+          height: 300px;
+        }
+      }
+    }
   }
 }
 </style>

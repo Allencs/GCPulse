@@ -43,5 +43,12 @@ public class GCPulseResult {
     
     // 时间序列数据（用于图表）
     private TimeSeriesData timeSeriesData;
+    
+    // 新增企业级功能
+    private JVMArguments jvmArguments;              // JVM 启动参数
+    private TenuringSummary tenuringSummary;        // 老年代晋升总结
+    private Map<String, GCCause> gcCauses;          // GC 原因统计
+    private SafePointStats safePointStats;          // 安全点统计
+    private StringDeduplicationStats stringDedup;   // 字符串去重统计
 }
 

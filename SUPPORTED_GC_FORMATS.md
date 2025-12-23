@@ -10,9 +10,9 @@ GCPulse 现在支持 **6种主流 GC 收集器** 和 **多种日志格式**。
 |--------|---------|---------|---------|
 | **ZGC** | 11-21+ | ✅ 完全支持 | Pause Mark Start/End, Relocate Start |
 | **CMS** | 6-8 | ✅ 完全支持 | ParNew, Initial Mark, Remark, Full GC, 并发阶段 |
-| **G1GC** | 7-21+ | ⚠️ 基础支持 | GC Pause |
-| **Parallel GC** | 6-21+ | ⚠️ 基础支持 | Young GC, Full GC |
-| **Serial GC** | 6-21+ | ⚠️ 基础支持 | Young GC, Full GC |
+| **G1GC** | 7-21+ | ✅ 完全支持 | Young/Mixed/Full GC, Humongous, To-space exhausted |
+| **Parallel GC** | 6-21+ | ✅ 完全支持 | PSYoungGen, ParOldGen, Full GC |
+| **Serial GC** | 6-21+ | ✅ 完全支持 | DefNew, Tenured, Full GC |
 | **Shenandoah** | 12+ | ⚠️ 基础支持 | 待增强 |
 
 ## 详细支持情况
@@ -113,41 +113,76 @@ GCPulse 现在支持 **6种主流 GC 收集器** 和 **多种日志格式**。
 
 ---
 
-### 3. G1GC - 基础支持 ⚠️
+### 3. G1GC - 完全支持 ✅
 
-#### 当前支持的格式
+#### 支持的格式
 ```
+# Young GC
 0.123: [GC pause (G1 Evacuation Pause) (young) 512M->128M(2048M), 0.0234567 secs]
+
+# Mixed GC
+1.234: [GC pause (G1 Evacuation Pause) (mixed) 1024M->512M(2048M), 0.0456789 secs]
+
+# Full GC
+5.678: [Full GC (Allocation Failure) 1536M->256M(2048M), 1.2345678 secs]
+
+# Humongous 对象
+2.345: [GC pause (G1 Evacuation Pause) (young) (Humongous) 768M->384M(2048M), 0.0567890 secs]
+
+# To-space exhausted
+3.456: [GC pause (G1 Evacuation Pause) (to-space exhausted) 1280M->1024M(2048M), 0.1234567 secs]
 ```
 
-#### 建议增强
-- ⚠️ Mixed GC 支持
-- ⚠️ Humongous object 支持
-- ⚠️ To-space exhausted 识别
-- ⚠️ G1 各阶段统计
+#### 提取的数据
+- ✅ Young GC 识别
+- ✅ Mixed GC 识别
+- ✅ Full GC 识别
+- ✅ Humongous 对象识别
+- ✅ To-space exhausted 识别
+- ✅ 堆内存变化统计
+- ✅ 暂停时间分析
+- ✅ 各类事件分类统计
 
 ---
 
-### 4. Parallel GC - 基础支持 ⚠️
+### 4. Parallel GC - 完全支持 ✅
 
-#### 当前支持的格式
+#### 支持的格式
 ```
+# Young GC (PSYoungGen)
 0.123: [GC [PSYoungGen: 512000K->64000K(1024000K)] 512000K->64000K(2048000K), 0.0234567 secs]
+
+# Full GC (包含 PSYoungGen 和 ParOldGen)
 0.456: [Full GC [PSYoungGen: 64000K->0K(1024000K)] [ParOldGen: 448000K->256000K(1024000K)] 512000K->256000K(2048000K), 1.2345678 secs]
 ```
 
-#### 建议增强
-- ⚠️ PSYoungGen 详细统计
-- ⚠️ ParOldGen 详细统计
+#### 提取的数据
+- ✅ PSYoungGen 详细统计（前后大小、容量）
+- ✅ ParOldGen 详细统计（前后大小、容量）
+- ✅ 堆总内存变化
+- ✅ Young GC 和 Full GC 区分
+- ✅ 暂停时间精确统计
+- ✅ 年轻代和老年代分离统计
 
 ---
 
-### 5. Serial GC - 基础支持 ⚠️
+### 5. Serial GC - 完全支持 ✅
 
-#### 当前支持的格式
+#### 支持的格式
 ```
+# Young GC (DefNew)
 0.123: [GC [DefNew: 512000K->64000K(1024000K), 0.0234567 secs] 512000K->64000K(2048000K), 0.0234567 secs]
+
+# Full GC (Tenured)
+1.234: [Full GC [Tenured: 448000K->256000K(1024000K), 1.2345678 secs] 512000K->256000K(2048000K), 1.2345678 secs]
 ```
+
+#### 提取的数据
+- ✅ DefNew (年轻代) 详细统计
+- ✅ Tenured (老年代) 详细统计
+- ✅ 堆总内存变化
+- ✅ Young GC 和 Full GC 区分
+- ✅ 暂停时间精确统计
 
 ---
 
@@ -164,9 +199,9 @@ GCPulse 现在支持 **6种主流 GC 收集器** 和 **多种日志格式**。
 |---------|---------|-----|-----|------|----------|--------|
 | **6-7** | 经典格式 | ❌ | ✅ | ✅ | ✅ | ✅ |
 | **8** | 详细格式 | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **9-10** | 统一日志 | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
-| **11-16** | 统一日志 | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
-| **17-21** | 统一日志 | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
+| **9-10** | 统一日志 | ⚠️ | ⚠️ | ✅ | ✅ | ✅ |
+| **11-16** | 统一日志 | ✅ | ⚠️ | ✅ | ✅ | ✅ |
+| **17-21** | 统一日志 | ✅ | ⚠️ | ✅ | ✅ | ✅ |
 
 ## 日志参数建议
 
@@ -225,17 +260,11 @@ GCPulse 现在支持 **6种主流 GC 收集器** 和 **多种日志格式**。
 
 ## 当前限制
 
-### 1. G1GC
-- ⚠️ 只支持基本的 pause 事件
-- ⚠️ 未解析各个子阶段（Ext Root Scanning等）
-- ⚠️ 未识别 Mixed GC、Humongous
-
-### 2. Unified Logging（JDK 9+）
+### 1. Unified Logging（JDK 9+）
 - ⚠️ ZGC 完全支持
-- ⚠️ 其他GC的统一日志格式支持有限
-- ⚠️ 建议使用经典格式或ZGC
+- ⚠️ 其他GC的统一日志格式支持有限（建议使用经典格式）
 
-### 3. 复杂嵌套格式
+### 2. 复杂嵌套格式
 - ⚠️ 某些极其复杂的嵌套格式可能无法完全解析
 - ⚠️ 但会尽可能提取关键信息
 
@@ -259,19 +288,64 @@ bash test-cms.sh
 检查结果
 ```
 
+## 增强功能说明
+
+### 🎯 G1GC 增强功能
+
+#### 1. Mixed GC 识别
+- **功能**：自动识别 Mixed GC 事件
+- **显示**：在阶段统计中显示为 "Mixed GC"
+- **用途**：帮助分析老年代回收效率
+
+#### 2. Humongous 对象识别
+- **功能**：识别大对象（Humongous）分配的GC
+- **显示**：事件类型标注 "(Humongous)"
+- **用途**：定位大对象分配问题
+
+#### 3. To-space exhausted 识别
+- **功能**：识别疏散空间不足的异常情况
+- **显示**：事件类型标注 "(To-space exhausted)"
+- **用途**：诊断堆内存配置问题
+- **建议**：出现此问题建议增加堆大小或调整 G1 参数
+
+### 🎯 Parallel GC 增强功能
+
+#### 1. PSYoungGen 详细统计
+- **提取数据**：年轻代 GC 前后大小、容量
+- **显示**：在事件详情中展示
+- **用途**：分析年轻代内存使用和回收效率
+
+#### 2. ParOldGen 详细统计
+- **提取数据**：老年代 GC 前后大小、容量
+- **显示**：在 Full GC 事件中展示
+- **用途**：分析老年代晋升和回收情况
+
+### 🎯 Serial GC 增强功能
+
+#### 1. DefNew 详细统计
+- **提取数据**：DefNew (年轻代) 详细内存变化
+- **显示**：独立统计年轻代回收效率
+- **用途**：小型应用的 GC 性能分析
+
+#### 2. Tenured 详细统计
+- **提取数据**：Tenured (老年代) 详细内存变化
+- **显示**：Full GC 中的老年代回收情况
+- **用途**：分析老年代内存压力
+
 ## 总结
 
-### ✅ 生产可用
-- **ZGC**：完全支持，推荐用于生产环境
-- **CMS**：完全支持，适配所有常见格式
+### ✅ 生产可用（完全支持）
+- **ZGC**：完全支持 JDK 11-21+，包括单代和分代模式
+- **CMS**：完全支持 JDK 6-8，所有常见格式
+- **G1GC**：完全支持，识别 Young/Mixed/Full GC、Humongous、To-space exhausted
+- **Parallel GC**：完全支持，详细的 PSYoungGen 和 ParOldGen 统计
+- **Serial GC**：完全支持，DefNew 和 Tenured 详细统计
 
-### ⚠️ 可用但建议测试
-- **G1GC**：基础支持，建议先测试你的日志格式
-- **Parallel GC**：基础支持
-- **Serial GC**：基础支持
+### ⚠️ 基础支持
+- **Shenandoah**：基础识别，建议扩展
 
-### 🔧 建议扩展（如有需要）
-- G1GC 详细阶段解析
+### 🔧 未来扩展计划
+- G1GC 各子阶段时间统计（Ext Root Scanning, Object Copy 等）
 - Shenandoah 完整支持
 - JDK 9+ 统一日志格式的全面支持
 

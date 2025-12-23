@@ -8,13 +8,13 @@ GCPulse 是一个现代化的Web应用程序，用于分析Java应用程序的GC
 
 ## ✨ 核心功能
 
-### 1. 多格式支持
-- ✅ G1GC
-- ✅ ZGC
-- ✅ CMS
-- ✅ Parallel GC
-- ✅ Serial GC
-- ✅ Shenandoah
+### 1. 多格式支持（完全支持）
+- ✅ **G1GC** - 识别 Young/Mixed/Full GC、Humongous 对象、To-space exhausted
+- ✅ **ZGC** - 支持 JDK 11-21+，单代和分代模式
+- ✅ **CMS** - 支持 JDK 6-8，包括 ParNew、Full GC、并发阶段
+- ✅ **Parallel GC** - PSYoungGen 和 ParOldGen 详细统计
+- ✅ **Serial GC** - DefNew 和 Tenured 详细统计
+- ⚠️ **Shenandoah** - 基础支持
 
 ### 2. 关键性能指标 (KPI)
 - 吞吐量分析
@@ -29,15 +29,19 @@ GCPulse 是一个现代化的Web应用程序，用于分析Java应用程序的GC
 - 交互式图表
 
 ### 4. 详细统计
-- JVM内存大小分析
-- GC阶段统计
-- 对象创建与晋升统计
+- JVM内存大小分析（Heap、Metaspace）
+- GC阶段统计（自动识别各类GC事件）
+- 对象创建、晋升与回收统计
 - 暂停时间范围分布
+- 年轻代和老年代分离统计（Parallel/Serial/CMS）
 
 ### 5. 智能诊断
 - 内存泄漏检测
-- Full GC警告
+- Full GC 警告
 - 长暂停识别
+- To-space exhausted 异常识别（G1GC）
+- Promotion Failed 识别（CMS）
+- Concurrent Mode Failure 识别（CMS）
 - 个性化优化建议
 
 ## 🏗️ 技术架构

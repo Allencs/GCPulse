@@ -11,11 +11,29 @@ import java.util.List;
 @Builder
 public class TimeSeriesData {
     
-    // 堆内存使用趋势
+    // 堆内存使用趋势（GC 后）
     private List<DataPoint> heapUsageTrend;
+    
+    // 堆内存使用趋势（GC 前）
+    private List<DataPoint> heapBeforeGCTrend;
     
     // GC暂停时间趋势
     private List<DataPoint> pauseTimeTrend;
+    
+    // 回收字节数趋势
+    private List<DataPoint> reclaimedBytesTrend;
+    
+    // 年轻代趋势
+    private List<DataPoint> youngGenTrend;
+    
+    // 老年代趋势
+    private List<DataPoint> oldGenTrend;
+    
+    // 对象分配趋势
+    private List<DataPoint> allocationTrend;
+    
+    // 对象晋升趋势
+    private List<DataPoint> promotionTrend;
     
     // GC吞吐量趋势
     private List<DataPoint> throughputTrend;

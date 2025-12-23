@@ -42,14 +42,41 @@
         </div>
       </div>
       
+      <!-- 连续 Full GC 警告（如果有） -->
+      <ConsecutiveFullGCWarning 
+        v-if="analysisData.diagnosisReport?.consecutiveFullGCInfo?.hasConsecutiveFullGC"
+        :consecutive-full-gc-info="analysisData.diagnosisReport.consecutiveFullGCInfo" 
+      />
+      
       <!-- KPI指标面板 -->
       <KPIPanel :kpi-metrics="analysisData.kpiMetrics" />
+      
+      <!-- 详细 GC 统计 -->
+      <ComprehensiveGCStats 
+        :gc-events="analysisData.gcEvents"
+        :kpi-metrics="analysisData.kpiMetrics"
+      />
+      
+      <!-- JVM 参数（企业级功能） -->
+      <JVMArgumentsCard 
+        v-if="analysisData.jvmArguments"
+        :jvm-arguments="analysisData.jvmArguments" 
+      />
       
       <!-- 内存大小 -->
       <MemorySizeCard :memory-size="analysisData.memorySize" />
       
-      <!-- 交互式图表 -->
-      <ChartsPanel :time-series-data="analysisData.timeSeriesData" />
+      <!-- 增强版交互式图表 -->
+      <EnhancedChartsPanel 
+        :time-series-data="analysisData.timeSeriesData" 
+        :gc-events="analysisData.gcEvents"
+      />
+      
+      <!-- GC原因统计（企业级功能） -->
+      <GCCausesCard 
+        v-if="analysisData.gcCauses && Object.keys(analysisData.gcCauses).length > 0"
+        :gc-causes="analysisData.gcCauses" 
+      />
       
       <!-- GC暂停时间分布 -->
       <PauseDurationCard :pause-distribution="analysisData.pauseDurationDistribution" />
@@ -58,6 +85,18 @@
       <ObjectStatsCard 
         :object-stats="analysisData.objectStats" 
         :collector-type="analysisData.collectorType" 
+      />
+      
+      <!-- 老年代晋升总结（企业级功能） -->
+      <TenuringSummaryCard 
+        v-if="analysisData.tenuringSummary"
+        :tenuring-summary="analysisData.tenuringSummary" 
+      />
+      
+      <!-- 字符串去重统计（企业级功能） -->
+      <StringDeduplicationCard 
+        v-if="analysisData.stringDedup"
+        :string-dedup="analysisData.stringDedup" 
       />
       
       <!-- GC阶段统计 -->
@@ -74,21 +113,27 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Loading, Document, Setting, DataLine } from '@element-plus/icons-vue'
 import KPIPanel from '../components/KPIPanel.vue'
+import ComprehensiveGCStats from '../components/ComprehensiveGCStats.vue'
 import MemorySizeCard from '../components/MemorySizeCard.vue'
-import ChartsPanel from '../components/ChartsPanel.vue'
+import EnhancedChartsPanel from '../components/EnhancedChartsPanel.vue'
 import PauseDurationCard from '../components/PauseDurationCard.vue'
 import ObjectStatsCard from '../components/ObjectStatsCard.vue'
 import PhaseStatisticsCard from '../components/PhaseStatisticsCard.vue'
 import DiagnosisPanel from '../components/DiagnosisPanel.vue'
+// 企业级功能组件
+import JVMArgumentsCard from '../components/JVMArgumentsCard.vue'
+import GCCausesCard from '../components/GCCausesCard.vue'
+import ConsecutiveFullGCWarning from '../components/ConsecutiveFullGCWarning.vue'
+import TenuringSummaryCard from '../components/TenuringSummaryCard.vue'
+import StringDeduplicationCard from '../components/StringDeduplicationCard.vue'
 
 const router = useRouter()
 const analysisData = ref(null)
 
 onMounted(() => {
-  // 从sessionStorage获取分析结果
-  const data = sessionStorage.getItem('gcAnalysisResult')
-  if (data) {
-    analysisData.value = JSON.parse(data)
+  // 从 Vue Router state 获取分析结果
+  if (window.history.state && window.history.state.analysisData) {
+    analysisData.value = window.history.state.analysisData
   } else {
     // 如果没有数据，返回首页
     router.push('/')
@@ -96,7 +141,6 @@ onMounted(() => {
 })
 
 function goBack() {
-  sessionStorage.removeItem('gcAnalysisResult')
   router.push('/')
 }
 

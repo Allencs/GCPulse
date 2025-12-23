@@ -90,14 +90,11 @@ onMounted(async () => {
 })
 
 function handleAnalysisComplete(result) {
-  // 跳转到分析结果页面
+  // 使用 Vue Router state 传递数据（内存中传递，避免 sessionStorage 配额限制）
   router.push({
     name: 'AnalysisResult',
-    params: { result: JSON.stringify(result) }
+    state: { analysisData: result }
   })
-  
-  // 使用sessionStorage传递数据
-  sessionStorage.setItem('gcAnalysisResult', JSON.stringify(result))
 }
 </script>
 
