@@ -26,3 +26,14 @@ cors:
   allowed-headers: "*"
   allow-credentials: true
 
+# AI诊断配置
+ai:
+  diagnosis:
+    # OpenAI API配置（支持OpenAI官方或兼容的服务，如OpenRouter）
+    # OpenRouter 完整API地址
+    api-url: https://openrouter.ai/api/v1/chat/completions  # 直接使用完整的端点地址
+    api-key: ${AI_API_KEY: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}  # 从环境变量读取，或在此处直接配置
+    default-model: google/gemini-3-flash-preview  # OpenRouter模型格式: provider/model-name
+    timeout-seconds: 90
+    max-log-length: 15000  # 发送给AI的最大日志长度
+

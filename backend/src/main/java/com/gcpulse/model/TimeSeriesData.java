@@ -35,6 +35,9 @@ public class TimeSeriesData {
     // 对象晋升趋势
     private List<DataPoint> promotionTrend;
     
+    // 元空间趋势
+    private List<DataPoint> metaspaceTrend;
+    
     // GC吞吐量趋势
     private List<DataPoint> throughputTrend;
     

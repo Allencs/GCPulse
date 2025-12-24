@@ -12,6 +12,7 @@ public class GCEvent {
     
     private long timestamp;           // 时间戳（相对于JVM启动）
     private String eventType;         // 事件类型（Young GC, Full GC, etc）
+    private String gcCause;           // GC原因（G1 Evacuation Pause, Metadata GC Threshold, etc）
     private double pauseTime;         // 暂停时间（ms）
     private double concurrentTime;    // 并发时间（ms）
     

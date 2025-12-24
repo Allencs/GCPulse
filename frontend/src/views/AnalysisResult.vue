@@ -104,6 +104,13 @@
       
       <!-- 诊断报告 -->
       <DiagnosisPanel :diagnosis-report="analysisData.diagnosisReport" />
+      
+      <!-- AI智能诊断 -->
+      <AIDiagnosis 
+        :collector-type="analysisData.collectorType"
+        :event-count="analysisData.gcEvents?.length || 0"
+        :gc-log-file="gcLogFile"
+      />
     </template>
   </div>
 </template>
@@ -120,6 +127,7 @@ import PauseDurationCard from '../components/PauseDurationCard.vue'
 import ObjectStatsCard from '../components/ObjectStatsCard.vue'
 import PhaseStatisticsCard from '../components/PhaseStatisticsCard.vue'
 import DiagnosisPanel from '../components/DiagnosisPanel.vue'
+import AIDiagnosis from '../components/AIDiagnosis.vue'
 // 企业级功能组件
 import JVMArgumentsCard from '../components/JVMArgumentsCard.vue'
 import GCCausesCard from '../components/GCCausesCard.vue'
@@ -129,11 +137,13 @@ import StringDeduplicationCard from '../components/StringDeduplicationCard.vue'
 
 const router = useRouter()
 const analysisData = ref(null)
+const gcLogFile = ref(null)
 
 onMounted(() => {
-  // 从 Vue Router state 获取分析结果
+  // 从 Vue Router state 获取分析结果和原始文件
   if (window.history.state && window.history.state.analysisData) {
     analysisData.value = window.history.state.analysisData
+    gcLogFile.value = window.history.state.gcLogFile || null
   } else {
     // 如果没有数据，返回首页
     router.push('/')

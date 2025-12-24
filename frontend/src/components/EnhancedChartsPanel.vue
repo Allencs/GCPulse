@@ -104,6 +104,18 @@
             A & P
           </el-button>
         </el-tooltip>
+        <el-tooltip 
+          :content="hasMetaspaceData ? '显示元空间（Metaspace）的内存使用趋势' : '当前日志不包含元空间数据'"
+          placement="top"
+        >
+          <el-button 
+            :type="activeView === 'metaspace' ? 'danger' : 'default'"
+            @click="switchView('metaspace')"
+            :disabled="!hasMetaspaceData"
+          >
+            Metaspace
+          </el-button>
+        </el-tooltip>
       </el-button-group>
     </div>
     
@@ -181,6 +193,10 @@ const hasOldGenData = computed(() => {
 const hasAllocationData = computed(() => {
   return (props.timeSeriesData?.allocationTrend && props.timeSeriesData.allocationTrend.length > 0) ||
          (props.timeSeriesData?.promotionTrend && props.timeSeriesData.promotionTrend.length > 0)
+})
+
+const hasMetaspaceData = computed(() => {
+  return props.timeSeriesData?.metaspaceTrend && props.timeSeriesData.metaspaceTrend.length > 0
 })
 
 onMounted(() => {
@@ -299,6 +315,13 @@ function updateMainChart() {
       title = 'Old Generation'
       yAxisName = '内存 (MB)'
       seriesName = 'Old Gen'
+      color = '#606266'
+      break
+    case 'metaspace':
+      chartData = getFilteredData(props.timeSeriesData.metaspaceTrend)
+      title = 'Metaspace'
+      yAxisName = '内存 (MB)'
+      seriesName = 'Metaspace'
       color = '#C45656'
       break
     case 'allocation':
@@ -434,14 +457,25 @@ function updateMainChart() {
 function updateStatCharts() {
   // Reclaimed Bytes Chart
   if (reclaimedChart && props.gcEvents) {
-    const minorGCEvents = props.gcEvents.filter(e => !e.isFullGC)
+    // 正确区分 Young GC、Mixed GC 和 Full GC
+    const youngGCEvents = props.gcEvents.filter(e => 
+      !e.isFullGC && 
+      e.eventType && 
+      e.eventType.toLowerCase().includes('young') &&
+      !e.eventType.toLowerCase().includes('mixed')
+    )
+    const mixedGCEvents = props.gcEvents.filter(e => 
+      e.eventType && e.eventType.toLowerCase().includes('mixed')
+    )
     const fullGCEvents = props.gcEvents.filter(e => e.isFullGC)
     
-    const minorGCReclaimed = calculateTotalReclaimed(minorGCEvents)
+    const youngGCReclaimed = calculateTotalReclaimed(youngGCEvents)
+    const mixedGCReclaimed = calculateTotalReclaimed(mixedGCEvents)
     const fullGCReclaimed = calculateTotalReclaimed(fullGCEvents)
     
     // 后端返回的是字节数，转换为 MB
-    const minorGCReclaimedMB = minorGCReclaimed / (1024 * 1024)
+    const youngGCReclaimedMB = youngGCReclaimed / (1024 * 1024)
+    const mixedGCReclaimedMB = mixedGCReclaimed / (1024 * 1024)
     const fullGCReclaimedMB = fullGCReclaimed / (1024 * 1024)
     
     // 智能选择单位：大于1024MB显示为GB，否则显示MB
@@ -453,25 +487,40 @@ function updateStatCharts() {
       }
     }
     
+    // 构建数据数组，只包含有数据的类型
+    const chartData = []
+    const xAxisData = []
+    const colors = ['#67C23A', '#409EFF', '#909399']
+    
+    if (youngGCReclaimedMB > 0) {
+      chartData.push({ value: youngGCReclaimedMB, name: 'Young GC', label: formatSize(youngGCReclaimedMB) })
+      xAxisData.push('Young GC')
+    }
+    if (mixedGCReclaimedMB > 0) {
+      chartData.push({ value: mixedGCReclaimedMB, name: 'Mixed GC', label: formatSize(mixedGCReclaimedMB) })
+      xAxisData.push('Mixed GC')
+    }
+    if (fullGCReclaimedMB > 0) {
+      chartData.push({ value: fullGCReclaimedMB, name: 'Full GC', label: formatSize(fullGCReclaimedMB) })
+      xAxisData.push('Full GC')
+    }
+    
     const option = {
       series: [{
         type: 'bar',
-        data: [
-          { value: minorGCReclaimedMB, name: 'Minor GC', label: formatSize(minorGCReclaimedMB) },
-          { value: fullGCReclaimedMB, name: 'Full GC', label: formatSize(fullGCReclaimedMB) }
-        ],
+        data: chartData,
         label: {
           show: true,
           position: 'top',
           formatter: (params) => params.data.label
         },
         itemStyle: {
-          color: (params) => params.dataIndex === 0 ? '#409EFF' : '#909399'
+          color: (params) => colors[params.dataIndex % colors.length]
         }
       }],
       xAxis: {
         type: 'category',
-        data: ['Minor GC', 'Full GC'],
+        data: xAxisData,
         axisLabel: { fontSize: 10 }
       },
       yAxis: {
@@ -488,24 +537,41 @@ function updateStatCharts() {
     reclaimedChart.setOption(option, true)
   }
   
-  // Cumulative Time Chart
+  // Cumulative Time Chart (饼图)
   if (cumulativeChart && props.gcEvents) {
-    const minorGCTime = calculateTotalTime(props.gcEvents.filter(e => !e.isFullGC))
+    const youngGCTime = calculateTotalTime(props.gcEvents.filter(e => 
+      !e.isFullGC && 
+      e.eventType && 
+      e.eventType.toLowerCase().includes('young') &&
+      !e.eventType.toLowerCase().includes('mixed')
+    ))
+    const mixedGCTime = calculateTotalTime(props.gcEvents.filter(e => 
+      e.eventType && e.eventType.toLowerCase().includes('mixed')
+    ))
     const fullGCTime = calculateTotalTime(props.gcEvents.filter(e => e.isFullGC))
+    
+    // 构建数据数组，只包含有数据的类型
+    const pieData = []
+    if (youngGCTime > 0) {
+      pieData.push({ value: youngGCTime, name: 'Young GC' })
+    }
+    if (mixedGCTime > 0) {
+      pieData.push({ value: mixedGCTime, name: 'Mixed GC' })
+    }
+    if (fullGCTime > 0) {
+      pieData.push({ value: fullGCTime, name: 'Full GC' })
+    }
     
     const option = {
       series: [{
         type: 'pie',
         radius: ['40%', '70%'],
-        data: [
-          { value: minorGCTime, name: 'Minor GC' },
-          { value: fullGCTime, name: 'Full GC' }
-        ],
+        data: pieData,
         label: {
           show: false
         },
         itemStyle: {
-          color: (params) => params.dataIndex === 0 ? '#409EFF' : '#909399'
+          color: (params) => ['#67C23A', '#409EFF', '#909399'][params.dataIndex % 3]
         }
       }],
       legend: {
@@ -519,16 +585,39 @@ function updateStatCharts() {
   
   // Average Time Chart
   if (avgTimeChart && props.gcEvents) {
-    const minorGCAvg = calculateAvgTime(props.gcEvents.filter(e => !e.isFullGC))
+    const youngGCAvg = calculateAvgTime(props.gcEvents.filter(e => 
+      !e.isFullGC && 
+      e.eventType && 
+      e.eventType.toLowerCase().includes('young') &&
+      !e.eventType.toLowerCase().includes('mixed')
+    ))
+    const mixedGCAvg = calculateAvgTime(props.gcEvents.filter(e => 
+      e.eventType && e.eventType.toLowerCase().includes('mixed')
+    ))
     const fullGCAvg = calculateAvgTime(props.gcEvents.filter(e => e.isFullGC))
+    
+    // 构建数据数组，只包含有数据的类型
+    const chartData = []
+    const xAxisData = []
+    const colors = ['#67C23A', '#409EFF', '#909399']
+    
+    if (youngGCAvg > 0) {
+      chartData.push({ value: youngGCAvg, name: 'Young GC' })
+      xAxisData.push('Young GC')
+    }
+    if (mixedGCAvg > 0) {
+      chartData.push({ value: mixedGCAvg, name: 'Mixed GC' })
+      xAxisData.push('Mixed GC')
+    }
+    if (fullGCAvg > 0) {
+      chartData.push({ value: fullGCAvg, name: 'Full GC' })
+      xAxisData.push('Full GC')
+    }
     
     const option = {
       series: [{
         type: 'bar',
-        data: [
-          { value: minorGCAvg, name: 'Minor GC' },
-          { value: fullGCAvg, name: 'Full GC' }
-        ],
+        data: chartData,
         label: {
           show: true,
           position: 'top',
@@ -537,12 +626,12 @@ function updateStatCharts() {
           }
         },
         itemStyle: {
-          color: (params) => params.dataIndex === 0 ? '#409EFF' : '#909399'
+          color: (params) => colors[params.dataIndex % colors.length]
         }
       }],
       xAxis: {
         type: 'category',
-        data: ['Minor GC', 'Full GC'],
+        data: xAxisData,
         axisLabel: { fontSize: 10 }
       },
       yAxis: {

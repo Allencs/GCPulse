@@ -90,10 +90,13 @@ onMounted(async () => {
 })
 
 function handleAnalysisComplete(result) {
-  // 使用 Vue Router state 传递数据（内存中传递，避免 sessionStorage 配额限制）
+  // 使用 Vue Router state 传递数据（包含分析结果和原始文件）
   router.push({
     name: 'AnalysisResult',
-    state: { analysisData: result }
+    state: { 
+      analysisData: result.analysisData,
+      gcLogFile: result.gcLogFile
+    }
   })
 }
 </script>

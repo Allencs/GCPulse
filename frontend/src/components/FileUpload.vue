@@ -136,7 +136,11 @@ async function startAnalysis() {
     
     if (response.success && response.data) {
       ElMessage.success('分析完成！')
-      emit('analysis-complete', response.data)
+      // 传递分析结果和原始文件
+      emit('analysis-complete', {
+        analysisData: response.data,
+        gcLogFile: selectedFile.value
+      })
     } else {
       throw new Error(response.error || '分析失败')
     }

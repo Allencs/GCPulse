@@ -7,7 +7,7 @@
     
     <el-row :gutter="20">
       <!-- Total GC stats -->
-      <el-col :xs="24" :sm="12" :md="6">
+      <el-col :xs="24" :sm="12" :md="6" :lg="5">
         <div class="stats-card">
           <h3 class="stats-card-title">Total GC stats</h3>
           <div class="stats-table">
@@ -43,45 +43,82 @@
         </div>
       </el-col>
       
-      <!-- Minor GC stats -->
-      <el-col :xs="24" :sm="12" :md="6">
+      <!-- Young GC stats (原 Minor GC) -->
+      <el-col :xs="24" :sm="12" :md="6" :lg="5">
         <div class="stats-card">
-          <h3 class="stats-card-title">Minor GC stats</h3>
+          <h3 class="stats-card-title">Young GC stats</h3>
           <div class="stats-table">
             <div class="stats-row">
-              <span class="stats-label">Minor GC count</span>
-              <span class="stats-value">{{ minorStats.count }}</span>
+              <span class="stats-label">Young GC count</span>
+              <span class="stats-value">{{ youngStats.count }}</span>
             </div>
             <div class="stats-row">
-              <span class="stats-label">Minor GC reclaimed</span>
-              <span class="stats-value">{{ minorStats.totalReclaimed }}</span>
+              <span class="stats-label">Young GC reclaimed</span>
+              <span class="stats-value">{{ youngStats.totalReclaimed }}</span>
             </div>
             <div class="stats-row">
-              <span class="stats-label">Minor GC total time</span>
-              <span class="stats-value">{{ minorStats.totalTime }}</span>
+              <span class="stats-label">Young GC total time</span>
+              <span class="stats-value">{{ youngStats.totalTime }}</span>
             </div>
             <div class="stats-row">
-              <span class="stats-label">Minor GC avg time</span>
-              <span class="stats-value">{{ minorStats.avgTime }}</span>
+              <span class="stats-label">Young GC avg time</span>
+              <span class="stats-value">{{ youngStats.avgTime }}</span>
             </div>
             <div class="stats-row">
-              <span class="stats-label">Minor GC avg time std dev</span>
-              <span class="stats-value">{{ minorStats.stdDev }}</span>
+              <span class="stats-label">Young GC avg time std dev</span>
+              <span class="stats-value">{{ youngStats.stdDev }}</span>
             </div>
             <div class="stats-row">
-              <span class="stats-label">Minor GC min/max time</span>
-              <span class="stats-value">{{ minorStats.minMax }}</span>
+              <span class="stats-label">Young GC min/max time</span>
+              <span class="stats-value">{{ youngStats.minMax }}</span>
             </div>
             <div class="stats-row">
-              <span class="stats-label">Minor GC Interval avg</span>
-              <span class="stats-value">{{ minorStats.intervalAvg }}</span>
+              <span class="stats-label">Young GC Interval avg</span>
+              <span class="stats-value">{{ youngStats.intervalAvg }}</span>
+            </div>
+          </div>
+        </div>
+      </el-col>
+      
+      <!-- Mixed GC stats (G1GC专用) -->
+      <el-col :xs="24" :sm="12" :md="6" :lg="5" v-if="mixedStats.count > 0">
+        <div class="stats-card">
+          <h3 class="stats-card-title">Mixed GC stats</h3>
+          <div class="stats-table">
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC count</span>
+              <span class="stats-value">{{ mixedStats.count }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC reclaimed</span>
+              <span class="stats-value">{{ mixedStats.totalReclaimed }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC total time</span>
+              <span class="stats-value">{{ mixedStats.totalTime }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC avg time</span>
+              <span class="stats-value">{{ mixedStats.avgTime }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC avg time std dev</span>
+              <span class="stats-value">{{ mixedStats.stdDev }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC min/max time</span>
+              <span class="stats-value">{{ mixedStats.minMax }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">Mixed GC Interval avg</span>
+              <span class="stats-value">{{ mixedStats.intervalAvg }}</span>
             </div>
           </div>
         </div>
       </el-col>
       
       <!-- Full GC stats -->
-      <el-col :xs="24" :sm="12" :md="6">
+      <el-col :xs="24" :sm="12" :md="6" :lg="5">
         <div class="stats-card">
           <h3 class="stats-card-title">Full GC stats</h3>
           <div class="stats-table">
@@ -117,8 +154,33 @@
         </div>
       </el-col>
       
+      <!-- CMS stats (CMS专用) -->
+      <el-col :xs="24" :sm="12" :md="6" :lg="4" v-if="cmsStats.count > 0">
+        <div class="stats-card">
+          <h3 class="stats-card-title">CMS GC stats</h3>
+          <div class="stats-table">
+            <div class="stats-row">
+              <span class="stats-label">CMS GC count</span>
+              <span class="stats-value">{{ cmsStats.count }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">CMS GC total time</span>
+              <span class="stats-value">{{ cmsStats.totalTime }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">CMS GC avg time</span>
+              <span class="stats-value">{{ cmsStats.avgTime }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-label">CMS GC min/max</span>
+              <span class="stats-value">{{ cmsStats.minMax }}</span>
+            </div>
+          </div>
+        </div>
+      </el-col>
+      
       <!-- GC Pause Statistics -->
-      <el-col :xs="24" :sm="12" :md="6">
+      <el-col :xs="24" :sm="12" :md="6" :lg="4">
         <div class="stats-card">
           <h3 class="stats-card-title">GC Pause Statistics</h3>
           <div class="stats-table">
@@ -190,20 +252,27 @@ const totalStats = computed(() => {
   }
 })
 
-// 计算 Minor GC 统计
-const minorStats = computed(() => {
+// 计算 Young GC 统计（原 Minor GC，现在只包含真正的 Young GC）
+const youngStats = computed(() => {
   if (!props.gcEvents || props.gcEvents.length === 0) {
     return getEmptyStats()
   }
   
-  const minorEvents = props.gcEvents.filter(e => !e.isFullGC)
-  if (minorEvents.length === 0) {
+  // 只统计 Young GC，排除 Mixed GC 和 Full GC
+  const youngEvents = props.gcEvents.filter(e => 
+    !e.isFullGC && 
+    e.eventType && 
+    e.eventType.toLowerCase().includes('young') &&
+    !e.eventType.toLowerCase().includes('mixed')
+  )
+  
+  if (youngEvents.length === 0) {
     return getEmptyStats()
   }
   
-  const times = minorEvents.map(e => e.pauseTime || 0)
+  const times = youngEvents.map(e => e.pauseTime || 0)
   const totalTime = times.reduce((sum, t) => sum + t, 0)
-  const totalReclaimed = minorEvents.reduce((sum, e) => {
+  const totalReclaimed = youngEvents.reduce((sum, e) => {
     if (e.heapMemory && e.heapMemory.before && e.heapMemory.after) {
       return sum + (e.heapMemory.before - e.heapMemory.after)
     }
@@ -213,13 +282,49 @@ const minorStats = computed(() => {
   const stats = calculateStats(times)
   
   return {
-    count: minorEvents.length,
+    count: youngEvents.length,
     totalReclaimed: formatBytes(totalReclaimed),
     totalTime: formatDuration(totalTime),
     avgTime: formatTime(stats.avg),
     stdDev: formatTime(stats.stdDev),
     minMax: `${formatTime(stats.min)} / ${formatTime(stats.max)}`,
-    intervalAvg: calculateIntervalAvg(minorEvents)
+    intervalAvg: calculateIntervalAvg(youngEvents)
+  }
+})
+
+// 计算 Mixed GC 统计（G1GC 专用）
+const mixedStats = computed(() => {
+  if (!props.gcEvents || props.gcEvents.length === 0) {
+    return getEmptyStats()
+  }
+  
+  const mixedEvents = props.gcEvents.filter(e => 
+    e.eventType && e.eventType.toLowerCase().includes('mixed')
+  )
+  
+  if (mixedEvents.length === 0) {
+    return getEmptyStats()
+  }
+  
+  const times = mixedEvents.map(e => e.pauseTime || 0)
+  const totalTime = times.reduce((sum, t) => sum + t, 0)
+  const totalReclaimed = mixedEvents.reduce((sum, e) => {
+    if (e.heapMemory && e.heapMemory.before && e.heapMemory.after) {
+      return sum + (e.heapMemory.before - e.heapMemory.after)
+    }
+    return sum
+  }, 0)
+  
+  const stats = calculateStats(times)
+  
+  return {
+    count: mixedEvents.length,
+    totalReclaimed: formatBytes(totalReclaimed),
+    totalTime: formatDuration(totalTime),
+    avgTime: formatTime(stats.avg),
+    stdDev: formatTime(stats.stdDev),
+    minMax: `${formatTime(stats.min)} / ${formatTime(stats.max)}`,
+    intervalAvg: calculateIntervalAvg(mixedEvents)
   }
 })
 
@@ -253,6 +358,36 @@ const fullStats = computed(() => {
     stdDev: formatTime(stats.stdDev),
     minMax: `${formatTime(stats.min)} / ${formatTime(stats.max)}`,
     intervalAvg: calculateIntervalAvg(fullEvents)
+  }
+})
+
+// 计算 CMS GC 统计（CMS 专用）
+const cmsStats = computed(() => {
+  if (!props.gcEvents || props.gcEvents.length === 0) {
+    return { count: 0, totalTime: 'n/a', avgTime: 'n/a', minMax: 'n/a' }
+  }
+  
+  // 统计所有 CMS 相关的事件：ParNew、CMS Initial Mark、CMS Final Remark 等
+  const cmsEvents = props.gcEvents.filter(e => 
+    e.eventType && (
+      e.eventType.includes('CMS') || 
+      e.eventType.includes('ParNew')
+    )
+  )
+  
+  if (cmsEvents.length === 0) {
+    return { count: 0, totalTime: 'n/a', avgTime: 'n/a', minMax: 'n/a' }
+  }
+  
+  const times = cmsEvents.map(e => e.pauseTime || 0)
+  const totalTime = times.reduce((sum, t) => sum + t, 0)
+  const stats = calculateStats(times)
+  
+  return {
+    count: cmsEvents.length,
+    totalTime: formatDuration(totalTime),
+    avgTime: formatTime(stats.avg),
+    minMax: `${formatTime(stats.min)} / ${formatTime(stats.max)}`
   }
 })
 
