@@ -62,39 +62,6 @@ watch(activeTab, (newTab) => {
   })
 })
 
-// 通用时间格式化函数
-function formatTimeAxis(value) {
-  // 判断是否为绝对Unix时间戳
-  // 方法：转换成日期后检查年份是否在合理范围内（2000-2100年）
-  const date = new Date(value)
-  const year = date.getFullYear()
-  const isAbsoluteTime = year >= 2000 && year <= 2100
-  
-  if (isAbsoluteTime) {
-    // 绝对时间：显示标准日期时间格式
-    const month = (date.getMonth() + 1).toString().padStart(2, '0')
-    const day = date.getDate().toString().padStart(2, '0')
-    const hours = date.getHours().toString().padStart(2, '0')
-    const minutes = date.getMinutes().toString().padStart(2, '0')
-    const seconds = date.getSeconds().toString().padStart(2, '0')
-    return `${month}-${day} ${hours}:${minutes}:${seconds}`
-  } else {
-    // 相对时间：显示GC运行时间
-    const totalSeconds = Math.floor(value / 1000)
-    const hours = Math.floor(totalSeconds / 3600)
-    const minutes = Math.floor((totalSeconds % 3600) / 60)
-    const seconds = totalSeconds % 60
-    
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-    } else if (minutes > 0) {
-      return `${minutes}:${seconds.toString().padStart(2, '0')}`
-    } else {
-      return `${seconds}s`
-    }
-  }
-}
-
 function initHeapChart() {
   if (!heapChartRef.value) return
   
@@ -133,9 +100,19 @@ function updateHeapChart() {
     xAxis: {
       type: 'time',
       axisLabel: {
-        formatter: formatTimeAxis,
-        rotate: 30
-      }
+        formatter: (value) => {
+          const date = new Date(value)
+          const month = (date.getMonth() + 1).toString().padStart(2, '0')
+          const day = date.getDate().toString().padStart(2, '0')
+          const hours = date.getHours().toString().padStart(2, '0')
+          const minutes = date.getMinutes().toString().padStart(2, '0')
+          return `${month}-${day} ${hours}:${minutes}`
+        },
+        rotate: 30,
+        showMinLabel: true,
+        showMaxLabel: true
+      },
+      splitNumber: 6
     },
     yAxis: {
       type: 'value',
@@ -212,9 +189,19 @@ function updatePauseChart() {
     xAxis: {
       type: 'time',
       axisLabel: {
-        formatter: formatTimeAxis,
-        rotate: 30
-      }
+        formatter: (value) => {
+          const date = new Date(value)
+          const month = (date.getMonth() + 1).toString().padStart(2, '0')
+          const day = date.getDate().toString().padStart(2, '0')
+          const hours = date.getHours().toString().padStart(2, '0')
+          const minutes = date.getMinutes().toString().padStart(2, '0')
+          return `${month}-${day} ${hours}:${minutes}`
+        },
+        rotate: 30,
+        showMinLabel: true,
+        showMaxLabel: true
+      },
+      splitNumber: 6
     },
     yAxis: {
       type: 'value',

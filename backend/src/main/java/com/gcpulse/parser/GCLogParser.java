@@ -20,16 +20,23 @@ public class GCLogParser {
     // 各种GC日志格式的正则表达式
     private static final Pattern TIMESTAMP_PATTERN = Pattern.compile("^(\\d+\\.\\d+):");
     
-    // G1GC Pattern - 增强版，支持 Young、Mixed、Full GC、Humongous、To-space exhausted
-    private static final Pattern G1GC_PATTERN = Pattern.compile("\\[GC pause.*?\\((.*?)\\).*?(\\d+\\.\\d+)ms\\]");
-    private static final Pattern G1GC_PATTERN_ENHANCED = Pattern.compile("(\\d+\\.\\d+): \\[(GC pause|Full GC).*?\\((.*?)\\)\\s*(.*?),(\\s*\\d+\\.\\d+)\\s*secs\\]");
-    // G1GC各阶段Pattern: [Ext Root Scanning (ms): 1.2]
-    private static final Pattern G1GC_PHASE_PATTERN = Pattern.compile("\\[(.*?)\\s*\\(ms\\):\\s*Min:\\s*([\\d.]+),.*?Avg:\\s*([\\d.]+),.*?Max:\\s*([\\d.]+)");
-    private static final Pattern G1GC_PHASE_SINGLE_PATTERN = Pattern.compile("\\[(.*?)\\s*\\(ms\\):\\s*([\\d.]+)\\]");
-    // Humongous 对象识别
-    private static final Pattern G1GC_HUMONGOUS_PATTERN = Pattern.compile("Humongous");
-    // To-space exhausted 识别
-    private static final Pattern G1GC_TO_SPACE_EXHAUSTED_PATTERN = Pattern.compile("to-space (exhausted|overflow)");
+    // G1GC日志格式枚举
+    private enum G1LogFormat {
+        JDK8_TRADITIONAL,  // JDK 8 传统格式
+        JDK9_UNIFIED       // JDK 9+ 统一日志格式 (Unified Logging)
+    }
+    
+    // JDK 8 G1GC Pattern（传统格式）
+    private static final Pattern G1GC_JDK8_PAUSE_PATTERN = Pattern.compile("(\\d+\\.\\d+):\\s*\\[GC pause\\s*\\((.*?)\\)\\s*\\((.*?)\\)");
+    private static final Pattern G1GC_JDK8_EDEN_PATTERN = Pattern.compile("\\[Eden:\\s*([\\d.]+)([BKMGT])\\(([\\d.]+)([BKMGT])\\)->([\\d.]+)([BKMGT])\\(([\\d.]+)([BKMGT])\\)\\s*Survivors?:\\s*([\\d.]+)([BKMGT])->([\\d.]+)([BKMGT])\\s*Heap:\\s*([\\d.]+)([BKMGT])\\(([\\d.]+)([BKMGT])\\)->([\\d.]+)([BKMGT])\\(([\\d.]+)([BKMGT])\\)\\]");
+    private static final Pattern G1GC_JDK8_TIME_PATTERN = Pattern.compile(",\\s*([\\d.]+)\\s*secs\\]");
+    private static final Pattern G1GC_JDK8_ABSOLUTE_TIMESTAMP = Pattern.compile("(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4}):");
+    
+    // JDK 9+ G1GC Pattern（Unified Logging格式）
+    private static final Pattern G1GC_UNIFIED_START_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[info\\s*\\]\\[gc,start\\s*\\]\\s*GC\\((\\d+)\\)\\s*Pause\\s+(\\w+)\\s*\\((.*?)\\)\\s*\\((.*?)\\)");
+    private static final Pattern G1GC_UNIFIED_END_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[info\\s*\\]\\[gc\\s*\\]\\s*GC\\((\\d+)\\)\\s*Pause\\s+(\\w+)\\s*\\((.*?)\\)\\s*\\((.*?)\\)\\s*([\\d.]+)M->([\\d.]+)M\\(([\\d.]+)M\\)\\s*([\\d.]+)ms");
+    private static final Pattern G1GC_UNIFIED_HEAP_REGIONS_PATTERN = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*Eden regions:\\s*(\\d+)->(\\d+)\\((\\d+)\\)");
+    private static final Pattern G1GC_UNIFIED_SURVIVOR_PATTERN = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*Survivor regions:\\s*(\\d+)->(\\d+)\\((\\d+)\\)");
     
     // 支持新旧两种ZGC日志格式
     private static final Pattern ZGC_PATTERN_OLD = Pattern.compile("\\[(\\d+\\.\\d+)s\\].*?GC\\((\\d+)\\).*?Pause.*?(\\d+\\.\\d+)ms");
@@ -41,6 +48,7 @@ public class GCLogParser {
     // 时间戳格式1: "4.856: [GC"
     // 时间戳格式2: "2025-08-05T13:23:18.409+0800: 4.856: [GC"
     private static final Pattern CMS_TIMESTAMP_PATTERN = Pattern.compile("(\\d+\\.\\d+):\\s*\\[(?:GC|Full GC)");
+    private static final Pattern CMS_ABSOLUTE_TIMESTAMP_PATTERN = Pattern.compile("(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4}):");
     
     // ParNew 格式（年轻代GC）
     private static final Pattern CMS_PARNEW_PATTERN = Pattern.compile("\\[ParNew(?:\\s+\\(promotion failed\\))?: (\\d+)K->(\\d+)K\\((\\d+)K\\), ([\\d.]+) secs\\]\\s+(\\d+)K->(\\d+)K\\((\\d+)K\\)");
@@ -165,30 +173,66 @@ public class GCLogParser {
     }
     
     /**
+     * 检测G1日志格式（JDK 8传统格式 vs JDK 9+ Unified Logging格式）
+     */
+    private G1LogFormat detectG1LogFormat(List<String> lines) {
+        for (String line : lines) {
+            // 检测JDK 9+ Unified Logging特征：[timestamp][level][tags]
+            if (line.matches("\\[\\d{4}-\\d{2}-\\d{2}T.*?\\]\\[.*?\\]\\[gc.*?\\].*")) {
+                System.out.println("检测到JDK 9+ G1 Unified Logging格式");
+                return G1LogFormat.JDK9_UNIFIED;
+            }
+            // 检测JDK 8传统格式特征：timestamp: [GC pause
+            if (line.matches(".*\\d+\\.\\d+:\\s*\\[GC pause.*")) {
+                System.out.println("检测到JDK 8 G1传统格式");
+                return G1LogFormat.JDK8_TRADITIONAL;
+            }
+        }
+        // 默认返回传统格式
+        System.out.println("未检测到明确的G1格式，默认使用JDK 8传统格式");
+        return G1LogFormat.JDK8_TRADITIONAL;
+    }
+    
+    /**
      * 解析GC事件
      */
     private List<GCEvent> parseGCEvents(List<String> lines, String collectorType) {
         List<GCEvent> events = new ArrayList<>();
         
-        for (String line : lines) {
-            try {
-                GCEvent event = null;
-                
-                // 根据不同的收集器类型解析
-                switch (collectorType) {
-                    case "G1GC" -> event = parseG1GCEvent(line);
-                    case "ZGC" -> event = parseZGCEvent(line);
-                    case "CMS" -> event = parseCMSEvent(line);
-                    case "Parallel GC" -> event = parseParallelGCEvent(line);
-                    case "Serial GC" -> event = parseSerialGCEvent(line);
-                    default -> event = parseGenericGCEvent(line);
+        // 对于G1GC，检测日志格式
+        G1LogFormat g1Format = null;
+        if ("G1GC".equals(collectorType)) {
+            g1Format = detectG1LogFormat(lines);
+        }
+        
+        // 如果是G1GC（任何格式），需要收集多行信息
+        if ("G1GC".equals(collectorType)) {
+            if (g1Format == G1LogFormat.JDK9_UNIFIED) {
+                events = parseG1UnifiedLogging(lines);
+            } else {
+                events = parseG1JDK8MultiLine(lines);
+            }
+        } else {
+            // 其他格式逐行解析
+            for (String line : lines) {
+                try {
+                    GCEvent event = null;
+                    
+                    // 根据不同的收集器类型解析
+                    switch (collectorType) {
+                        case "ZGC" -> event = parseZGCEvent(line);
+                        case "CMS" -> event = parseCMSEvent(line);
+                        case "Parallel GC" -> event = parseParallelGCEvent(line);
+                        case "Serial GC" -> event = parseSerialGCEvent(line);
+                        default -> event = parseGenericGCEvent(line);
+                    }
+                    
+                    if (event != null) {
+                        events.add(event);
+                    }
+                } catch (Exception e) {
+                    // 忽略无法解析的行
                 }
-                
-                if (event != null) {
-                    events.add(event);
-                }
-            } catch (Exception e) {
-                // 忽略无法解析的行
             }
         }
         
@@ -196,59 +240,241 @@ public class GCLogParser {
     }
     
     /**
-     * 解析G1GC事件 - 增强版
-     * 支持: Young GC, Mixed GC, Full GC, Humongous对象, To-space exhausted, 各阶段统计
+     * 解析JDK 8 G1GC事件（传统格式，多行模式）
+     * 格式示例：
+     * 2025-12-24T20:01:41.755-0800: 0.561: [GC pause (G1 Evacuation Pause) (young)
+     * [Eden: 24.0M(24.0M)->0.0B(33.0M) Survivors: 0.0B->3072.0K Heap: 24.0M(256.0M)->4191.5K(256.0M)]
+     * [Times: user=0.01 sys=0.00, real=0.00 secs], 0.0034420 secs]
      */
-    private GCEvent parseG1GCEvent(String line) {
-        Matcher tsMatcher = TIMESTAMP_PATTERN.matcher(line);
-        if (!tsMatcher.find()) return null;
+    private List<GCEvent> parseG1JDK8MultiLine(List<String> lines) {
+        List<GCEvent> events = new ArrayList<>();
+        StringBuilder currentEvent = new StringBuilder();
+        boolean inGCEvent = false;
         
-        double timestamp = Double.parseDouble(tsMatcher.group(1));
+        for (String line : lines) {
+            try {
+                // 检查是否是GC事件的开始
+                if (line.contains(": [GC pause") || line.contains(": [Full GC")) {
+                    // 如果之前有未完成的事件，先处理它
+                    if (inGCEvent && currentEvent.length() > 0) {
+                        GCEvent event = parseG1JDK8SingleEvent(currentEvent.toString());
+                        if (event != null) {
+                            events.add(event);
+                        }
+                        currentEvent = new StringBuilder();
+                    }
+                    inGCEvent = true;
+                    currentEvent.append(line).append("\n");
+                } else if (inGCEvent) {
+                    currentEvent.append(line).append("\n");
+                    // 检查事件是否结束（遇到"}"或者下一个Heap before GC）
+                    if (line.trim().equals("}") || line.contains("Heap before GC")) {
+                        GCEvent event = parseG1JDK8SingleEvent(currentEvent.toString());
+                        if (event != null) {
+                            events.add(event);
+                        }
+                        currentEvent = new StringBuilder();
+                        inGCEvent = false;
+                    }
+                }
+            } catch (Exception e) {
+                // 忽略解析错误
+                System.err.println("解析G1 JDK8事件失败: " + e.getMessage());
+            }
+        }
         
-        // 识别GC类型
+        // 处理最后一个未完成的事件
+        if (inGCEvent && currentEvent.length() > 0) {
+            try {
+                GCEvent event = parseG1JDK8SingleEvent(currentEvent.toString());
+                if (event != null) {
+                    events.add(event);
+                }
+            } catch (Exception e) {
+                System.err.println("解析最后一个G1 JDK8事件失败: " + e.getMessage());
+            }
+        }
+        
+        System.out.println("解析到 " + events.size() + " 个G1 GC事件（JDK 8传统格式）");
+        return events;
+    }
+    
+    /**
+     * 解析单个JDK 8 G1GC事件（已收集完整的多行文本）
+     */
+    private GCEvent parseG1JDK8SingleEvent(String eventText) {
+        // 检查是否是GC pause行
+        if (!eventText.contains("[GC pause") && !eventText.contains("[Full GC")) {
+            return null;
+        }
+        
+        long timestamp = 0;
         String gcType = "Young GC";
         boolean isFullGC = false;
         
-        if (line.contains("Full GC")) {
+        // 尝试解析绝对时间戳（如果存在）
+        Matcher absTimeMatcher = G1GC_JDK8_ABSOLUTE_TIMESTAMP.matcher(eventText);
+        if (absTimeMatcher.find()) {
+            String isoTimestamp = absTimeMatcher.group(1);
+            timestamp = parseAbsoluteTimestamp(isoTimestamp);
+        } else {
+            // 解析相对时间戳
+            Matcher relTimeMatcher = G1GC_JDK8_PAUSE_PATTERN.matcher(eventText);
+            if (relTimeMatcher.find()) {
+                double relativeTime = Double.parseDouble(relTimeMatcher.group(1));
+                timestamp = (long) (relativeTime * 1000);
+            } else {
+                return null;
+            }
+        }
+        
+        // 识别GC类型
+        if (eventText.contains("Full GC")) {
             gcType = "Full GC";
             isFullGC = true;
-        } else if (line.contains("(mixed)")) {
+        } else if (eventText.contains("(mixed)")) {
             gcType = "Mixed GC";
-        } else if (line.contains("(young)")) {
+        } else if (eventText.contains("(young)")) {
             gcType = "Young GC";
         }
         
-        // 识别Humongous对象
-        if (G1GC_HUMONGOUS_PATTERN.matcher(line).find()) {
-            gcType = gcType + " (Humongous)";
-        }
-        
-        // 识别To-space exhausted
-        if (G1GC_TO_SPACE_EXHAUSTED_PATTERN.matcher(line).find()) {
-            gcType = gcType + " (To-space exhausted)";
-        }
-        
-        // 提取暂停时间
+        // 提取暂停时间（秒）- 查找最后的", X.XXXX secs]"
         double pauseTime = 0.0;
-        Matcher gcMatcher = G1GC_PATTERN.matcher(line);
-        if (gcMatcher.find()) {
-            pauseTime = Double.parseDouble(gcMatcher.group(2));
+        Matcher timeMatcher = G1GC_JDK8_TIME_PATTERN.matcher(eventText);
+        while (timeMatcher.find()) {
+            // 使用最后一个匹配的时间（总暂停时间）
+            pauseTime = Double.parseDouble(timeMatcher.group(1)) * 1000; // 转换为毫秒
         }
         
-        // 解析堆内存变化
-        GCEvent.MemoryChange heapMemory = parseMemoryChange(line);
+        // 解析Eden内存变化（用于构建heapMemory）
+        GCEvent.MemoryChange heapMemory = null;
+        Matcher edenMatcher = G1GC_JDK8_EDEN_PATTERN.matcher(eventText);
+        if (edenMatcher.find()) {
+            // 提取Heap信息：Heap: 24.0M(256.0M)->4191.5K(256.0M)
+            double heapBefore = parseMemoryUnit(edenMatcher.group(13), edenMatcher.group(14));
+            double heapAfter = parseMemoryUnit(edenMatcher.group(17), edenMatcher.group(18));
+            double heapTotal = parseMemoryUnit(edenMatcher.group(19), edenMatcher.group(20));
+            
+            heapMemory = GCEvent.MemoryChange.builder()
+                .before((long) heapBefore)
+                .after((long) heapAfter)
+                .total((long) heapTotal)
+                .build();
+        }
         
-        // 构建事件
-        GCEvent.GCEventBuilder eventBuilder = GCEvent.builder()
-                .timestamp((long) (timestamp * 1000))
+        // 如果没有匹配到详细的内存信息，尝试简单解析
+        if (heapMemory == null) {
+            heapMemory = parseMemoryChange(eventText);
+        }
+        
+        return GCEvent.builder()
+                .timestamp(timestamp)
                 .eventType(gcType)
                 .pauseTime(pauseTime)
                 .concurrentTime(0.0)
                 .heapMemory(heapMemory)
                 .isFullGC(isFullGC)
-                .isLongPause(pauseTime > 100);
+                .isLongPause(pauseTime > 100)
+                .build();
+    }
+    
+    /**
+     * 解析内存单位并转换为字节
+     */
+    private double parseMemoryUnit(String value, String unit) {
+        double val = Double.parseDouble(value);
+        return switch (unit) {
+            case "B" -> val;
+            case "K" -> val * 1024;
+            case "M" -> val * 1024 * 1024;
+            case "G" -> val * 1024 * 1024 * 1024;
+            case "T" -> val * 1024 * 1024 * 1024 * 1024;
+            default -> val;
+        };
+    }
+    
+    /**
+     * 解析JDK 9+ G1 Unified Logging格式
+     * 格式示例：
+     * [2025-12-24T11:27:59.533+0000][info ][gc,start] GC(0) Pause Young (Normal) (G1 Evacuation Pause)
+     * [2025-12-24T11:27:59.535+0000][info ][gc     ] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 23M->16M(260M) 2.554ms
+     * [2025-12-24T11:27:59.535+0000][info ][gc,heap] GC(0) Eden regions: 11->0(7)
+     */
+    private List<GCEvent> parseG1UnifiedLogging(List<String> lines) {
+        List<GCEvent> events = new ArrayList<>();
+        Map<String, GCEventData> gcEventMap = new HashMap<>();
         
-        return eventBuilder.build();
+        for (String line : lines) {
+            try {
+                // 匹配GC结束行（包含完整信息）
+                Matcher endMatcher = G1GC_UNIFIED_END_PATTERN.matcher(line);
+                if (endMatcher.find()) {
+                    String timestampStr = endMatcher.group(1);
+                    String gcId = endMatcher.group(2);
+                    String pauseType = endMatcher.group(3); // Young, Mixed, Full
+                    String gcCause = endMatcher.group(5);   // G1 Evacuation Pause
+                    double heapBefore = Double.parseDouble(endMatcher.group(6));
+                    double heapAfter = Double.parseDouble(endMatcher.group(7));
+                    double heapTotal = Double.parseDouble(endMatcher.group(8));
+                    double pauseTime = Double.parseDouble(endMatcher.group(9));
+                    
+                    // 解析时间戳
+                    long timestamp = parseAbsoluteTimestamp(timestampStr);
+                    
+                    // 确定GC类型
+                    String gcType = "Young GC";
+                    boolean isFullGC = false;
+                    if (pauseType.equalsIgnoreCase("Full")) {
+                        gcType = "Full GC";
+                        isFullGC = true;
+                    } else if (pauseType.equalsIgnoreCase("Mixed")) {
+                        gcType = "Mixed GC";
+                    }
+                    
+                    // 构建内存变化（MB转字节）
+                    GCEvent.MemoryChange heapMemory = GCEvent.MemoryChange.builder()
+                        .before((long) (heapBefore * 1024 * 1024))
+                        .after((long) (heapAfter * 1024 * 1024))
+                        .total((long) (heapTotal * 1024 * 1024))
+                        .build();
+                    
+                    // 创建GC事件
+                    GCEvent event = GCEvent.builder()
+                            .timestamp(timestamp)
+                .eventType(gcType)
+                .pauseTime(pauseTime)
+                .concurrentTime(0.0)
+                .heapMemory(heapMemory)
+                .isFullGC(isFullGC)
+                            .isLongPause(pauseTime > 100)
+                            .build();
+                    
+                    events.add(event);
+                    
+                    // 保存到map用于后续增强
+                    GCEventData data = new GCEventData();
+                    data.event = event;
+                    gcEventMap.put(gcId, data);
+                }
+            } catch (Exception e) {
+                // 忽略无法解析的行
+                System.err.println("解析G1 Unified Logging失败: " + e.getMessage());
+            }
+        }
+        
+        System.out.println("解析到 " + events.size() + " 个G1 GC事件（Unified Logging格式）");
+        return events;
+    }
+    
+    /**
+     * 用于临时存储GC事件数据
+     */
+    private static class GCEventData {
+        GCEvent event;
+        Integer edenBefore;
+        Integer edenAfter;
+        Integer survivorBefore;
+        Integer survivorAfter;
     }
     
     /**
@@ -357,11 +583,21 @@ public class GCLogParser {
      * 解析CMS事件（支持多种格式）
      */
     private GCEvent parseCMSEvent(String line) {
-        // 提取时间戳：支持格式 "4.856: [GC" 或 "2025-08-05T13:23:18.409+0800: 4.856: [GC"
+        // 提取时间戳：优先使用绝对时间，否则使用相对时间
+        long timestamp = 0;
+        
+        // 尝试提取绝对时间戳：2025-08-05T13:23:18.409+0800
+        Matcher absoluteTsMatcher = CMS_ABSOLUTE_TIMESTAMP_PATTERN.matcher(line);
+        if (absoluteTsMatcher.find()) {
+            String absoluteTimestamp = absoluteTsMatcher.group(1);
+            timestamp = parseAbsoluteTimestamp(absoluteTimestamp);
+        } else {
+            // 使用相对时间戳：4.856
         Matcher tsMatcher = CMS_TIMESTAMP_PATTERN.matcher(line);
-        double timestamp = 0;
         if (tsMatcher.find()) {
-            timestamp = Double.parseDouble(tsMatcher.group(1));
+                double relativeTimestamp = Double.parseDouble(tsMatcher.group(1));
+                timestamp = (long) (relativeTimestamp * 1000);
+            }
         }
         
         // 1. 尝试解析 CMS Initial Mark（初始标记）
@@ -370,7 +606,7 @@ public class GCLogParser {
             double pauseTime = Double.parseDouble(initialMarkMatcher.group(5)) * 1000;
             
             return GCEvent.builder()
-                    .timestamp((long) (timestamp * 1000))
+                    .timestamp(timestamp)
                     .eventType("CMS Initial Mark")
                     .pauseTime(pauseTime)
                     .isFullGC(false)
@@ -384,7 +620,7 @@ public class GCLogParser {
             double pauseTime = Double.parseDouble(remarkMatcher.group(5)) * 1000;
             
             return GCEvent.builder()
-                    .timestamp((long) (timestamp * 1000))
+                    .timestamp(timestamp)
                     .eventType("CMS Final Remark")
                     .pauseTime(pauseTime)
                     .isFullGC(false)
@@ -421,7 +657,7 @@ public class GCLogParser {
             String eventType = isPromotionFailed ? "ParNew (promotion failed)" : "ParNew";
             
             return GCEvent.builder()
-                    .timestamp((long) (timestamp * 1000))
+                    .timestamp(timestamp)
                     .eventType(eventType)
                     .pauseTime(pauseTime)
                     .heapMemory(heapMemory)
@@ -455,7 +691,7 @@ public class GCLogParser {
             }
             
             return GCEvent.builder()
-                    .timestamp((long) (timestamp * 1000))
+                    .timestamp(timestamp)
                     .eventType(eventType)
                     .pauseTime(pauseTime)
                     .heapMemory(heapMemory)
@@ -1175,49 +1411,47 @@ public class GCLogParser {
                     .build();
         }
         
-        // 计算相对时间（从第一个事件开始）
-        long baseTimestamp = events.get(0).getTimestamp();
-        
+        // 直接使用事件的时间戳（可能是绝对时间或相对时间）
         for (GCEvent event : events) {
-            // 使用相对时间（毫秒），前端图表使用 type: 'time' 需要毫秒值
-            long relativeTime = event.getTimestamp() - baseTimestamp;
+            // 使用事件的timestamp（毫秒），前端图表使用 type: 'time' 需要毫秒值
+            long timestamp = event.getTimestamp();
             
             // Heap After GC
             if (event.getHeapMemory() != null) {
                 heapAfterTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value(event.getHeapMemory().getAfter() / (1024.0 * 1024.0))
                         .build());
                 
                 // Heap Before GC
                 heapBeforeTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value(event.getHeapMemory().getBefore() / (1024.0 * 1024.0))
                         .build());
                 
                 // Reclaimed Bytes
                 reclaimedTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value(event.getHeapMemory().getReclaimed() / (1024.0 * 1024.0))
                         .build());
             }
             
             // GC Duration (Pause Time)
             pauseTrend.add(TimeSeriesData.DataPoint.builder()
-                    .timestamp(relativeTime)
+                    .timestamp(timestamp)
                     .value(event.getPauseTime())
                     .build());
             
             // Young Gen
             if (event.getYoungGen() != null) {
                 youngGenTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value(event.getYoungGen().getAfter() / (1024.0 * 1024.0))
                         .build());
                 
                 // Allocation (Young Gen created)
                 allocationTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value(event.getYoungGen().getBefore() / (1024.0 * 1024.0))
                         .build());
             }
@@ -1225,7 +1459,7 @@ public class GCLogParser {
             // Old Gen
             if (event.getOldGen() != null) {
                 oldGenTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value(event.getOldGen().getAfter() / (1024.0 * 1024.0))
                         .build());
             }
@@ -1233,7 +1467,7 @@ public class GCLogParser {
             // Promotion (increase in old gen)
             if (event.getOldGen() != null && event.getOldGen().getAfter() > event.getOldGen().getBefore()) {
                 promotionTrend.add(TimeSeriesData.DataPoint.builder()
-                        .timestamp(relativeTime)
+                        .timestamp(timestamp)
                         .value((event.getOldGen().getAfter() - event.getOldGen().getBefore()) / (1024.0 * 1024.0))
                         .build());
             }
@@ -1728,6 +1962,27 @@ public class GCLogParser {
         }
         
         return recommendations;
+    }
+    
+    /**
+     * 解析绝对时间戳（ISO 8601格式）
+     * 例如：2025-08-05T13:23:18.409+0800
+     * 
+     * @param timestampStr ISO 8601格式的时间戳字符串
+     * @return Unix毫秒时间戳
+     */
+    private long parseAbsoluteTimestamp(String timestampStr) {
+        try {
+            // 解析格式：2025-08-05T13:23:18.409+0800
+            // 使用 XX 来匹配 +0800 这样的时区格式（没有冒号）
+            java.time.format.DateTimeFormatter formatter = 
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXX");
+            java.time.ZonedDateTime zonedDateTime = java.time.ZonedDateTime.parse(timestampStr, formatter);
+            return zonedDateTime.toInstant().toEpochMilli();
+        } catch (Exception e) {
+            // 如果解析失败，返回0
+            return 0;
+        }
     }
 }
 
