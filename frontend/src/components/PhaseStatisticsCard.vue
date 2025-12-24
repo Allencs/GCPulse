@@ -128,7 +128,7 @@ function initAvgChart() {
     },
     grid: {
       left: '3%',
-      right: '4%',
+      right: '15%',
       bottom: '3%',
       top: '10%',
       containLabel: true
@@ -162,7 +162,7 @@ function initAvgChart() {
         label: {
           show: true,
           position: 'right',
-          formatter: '{c} ms',
+          formatter: (params) => `${params.value.toFixed(2)} ms`,
           fontSize: 10
         }
       }

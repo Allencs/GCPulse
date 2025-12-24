@@ -383,9 +383,39 @@ function updateMainChart() {
     } : undefined,
     xAxis: {
       type: 'time',
-      name: '时间 (秒)',
       axisLabel: {
-        formatter: (value) => (value / 1000).toFixed(0)
+        formatter: (value) => {
+          // 判断是否为绝对Unix时间戳
+          // 方法：转换成日期后检查年份是否在合理范围内（2000-2100年）
+          const date = new Date(value)
+          const year = date.getFullYear()
+          const isAbsoluteTime = year >= 2000 && year <= 2100
+          
+          if (isAbsoluteTime) {
+            // 绝对时间：显示标准日期时间格式
+            const month = (date.getMonth() + 1).toString().padStart(2, '0')
+            const day = date.getDate().toString().padStart(2, '0')
+            const hours = date.getHours().toString().padStart(2, '0')
+            const minutes = date.getMinutes().toString().padStart(2, '0')
+            const seconds = date.getSeconds().toString().padStart(2, '0')
+            return `${month}-${day} ${hours}:${minutes}:${seconds}`
+          } else {
+            // 相对时间：显示GC运行时间
+            const totalSeconds = Math.floor(value / 1000)
+            const hours = Math.floor(totalSeconds / 3600)
+            const minutes = Math.floor((totalSeconds % 3600) / 60)
+            const seconds = totalSeconds % 60
+            
+            if (hours > 0) {
+              return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+            } else if (minutes > 0) {
+              return `${minutes}:${seconds.toString().padStart(2, '0')}`
+            } else {
+              return `${seconds}s`
+            }
+          }
+        },
+        rotate: 30
       }
     },
     yAxis: {
@@ -398,9 +428,9 @@ function updateMainChart() {
     series: series,
     grid: {
       left: '3%',
-      right: '4%',
-      bottom: '3%',
-      top: activeView.value === 'allocation' ? '20%' : '15%',
+      right: '8%',
+      bottom: '12%',
+      top: activeView.value === 'allocation' ? '20%' : '12%',
       containLabel: true
     },
     dataZoom: [
@@ -424,20 +454,36 @@ function updateMainChart() {
 function updateStatCharts() {
   // Reclaimed Bytes Chart
   if (reclaimedChart && props.gcEvents) {
-    const minorGCReclaimed = calculateTotalReclaimed(props.gcEvents.filter(e => !e.isFullGC))
-    const fullGCReclaimed = calculateTotalReclaimed(props.gcEvents.filter(e => e.isFullGC))
+    const minorGCEvents = props.gcEvents.filter(e => !e.isFullGC)
+    const fullGCEvents = props.gcEvents.filter(e => e.isFullGC)
+    
+    const minorGCReclaimed = calculateTotalReclaimed(minorGCEvents)
+    const fullGCReclaimed = calculateTotalReclaimed(fullGCEvents)
+    
+    // 后端返回的是字节数，转换为 MB
+    const minorGCReclaimedMB = minorGCReclaimed / (1024 * 1024)
+    const fullGCReclaimedMB = fullGCReclaimed / (1024 * 1024)
+    
+    // 智能选择单位：大于1024MB显示为GB，否则显示MB
+    const formatSize = (mb) => {
+      if (mb >= 1024) {
+        return `${(mb / 1024).toFixed(2)} GB`
+      } else {
+        return `${mb.toFixed(2)} MB`
+      }
+    }
     
     const option = {
       series: [{
         type: 'bar',
         data: [
-          { value: minorGCReclaimed / 1024, name: 'Minor GC' },
-          { value: fullGCReclaimed / 1024, name: 'Full GC' }
+          { value: minorGCReclaimedMB, name: 'Minor GC', label: formatSize(minorGCReclaimedMB) },
+          { value: fullGCReclaimedMB, name: 'Full GC', label: formatSize(fullGCReclaimedMB) }
         ],
         label: {
           show: true,
           position: 'top',
-          formatter: '{c} GB'
+          formatter: (params) => params.data.label
         },
         itemStyle: {
           color: (params) => params.dataIndex === 0 ? '#409EFF' : '#909399'
@@ -506,7 +552,9 @@ function updateStatCharts() {
         label: {
           show: true,
           position: 'top',
-          formatter: '{c} ms'
+          formatter: (params) => {
+            return `${params.value.toFixed(2)} ms`
+          }
         },
         itemStyle: {
           color: (params) => params.dataIndex === 0 ? '#409EFF' : '#909399'
