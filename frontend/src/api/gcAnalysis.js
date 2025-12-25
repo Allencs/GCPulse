@@ -60,5 +60,22 @@ export function getSupportedCollectors() {
   return api.get('/gc/collectors')
 }
 
+/**
+ * 导出分析结果为HTML（保持原有页面样式）
+ */
+export function exportAnalysisToHtml(renderedHtml, analysisData) {
+  const formData = new FormData()
+  formData.append('renderedHtml', renderedHtml)
+  formData.append('analysisData', JSON.stringify(analysisData))
+  
+  return axios.post('/api/gc/export/html', formData, {
+    responseType: 'blob',
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    timeout: 30000
+  })
+}
+
 export default api
 

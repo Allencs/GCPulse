@@ -47,3 +47,45 @@ export function performAIDiagnosis(file, apiUrl, apiKey, model, collectorType, e
 }
 
 
+/**
+ * 导出诊断报告为HTML（使用渲染后的HTML）
+ */
+export function exportToHtml(renderedHtml, diagnosis, collectorType, eventCount) {
+  const formData = new FormData()
+  formData.append('renderedHtml', renderedHtml)
+  formData.append('diagnosis', diagnosis)
+  if (collectorType) {
+    formData.append('collectorType', collectorType)
+  }
+  if (eventCount) {
+    formData.append('eventCount', eventCount)
+  }
+
+  return aiApi.post('/ai/export/html', formData, {
+    responseType: 'blob',
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+/**
+ * 导出诊断报告为Markdown
+ */
+export function exportToMarkdown(diagnosis, collectorType, eventCount) {
+  const formData = new FormData()
+  formData.append('diagnosis', diagnosis)
+  if (collectorType) {
+    formData.append('collectorType', collectorType)
+  }
+  if (eventCount) {
+    formData.append('eventCount', eventCount)
+  }
+
+  return aiApi.post('/ai/export/markdown', formData, {
+    responseType: 'blob',
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}

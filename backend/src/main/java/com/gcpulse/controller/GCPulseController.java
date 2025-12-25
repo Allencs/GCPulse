@@ -2,13 +2,18 @@ package com.gcpulse.controller;
 
 import com.gcpulse.model.GCPulseResult;
 import com.gcpulse.service.GCPulseService;
+import com.gcpulse.service.DiagnosisExportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -22,6 +27,7 @@ import java.util.Map;
 public class GCPulseController {
     
     private final GCPulseService gcPulseService;
+    private final DiagnosisExportService exportService;
     
     /**
      * 上传并分析GC日志
@@ -82,6 +88,38 @@ public class GCPulseController {
                 "Shenandoah"
         });
         return ResponseEntity.ok(response);
+    }
+    
+    /**
+     * 导出分析结果为HTML
+     */
+    @PostMapping("/export/html")
+    public ResponseEntity<byte[]> exportAnalysisToHtml(
+            @RequestParam(value = "renderedHtml", required = false) String renderedHtml,
+            @RequestParam("analysisData") String analysisDataJson) {
+        
+        try {
+            log.info("导出GC分析结果为HTML格式");
+            
+            // 使用导出服务生成HTML
+            byte[] htmlBytes = exportService.exportAnalysisToHtml(renderedHtml, analysisDataJson);
+            
+            String fileName = "GCPulse_Analysis_" + 
+                    LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".html";
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.TEXT_HTML);
+            headers.setContentDispositionFormData("attachment", fileName);
+            headers.setContentLength(htmlBytes.length);
+            
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(htmlBytes);
+                    
+        } catch (Exception e) {
+            log.error("导出分析结果HTML失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
     
     private Map<String, Object> createSuccessResponse(Object data) {

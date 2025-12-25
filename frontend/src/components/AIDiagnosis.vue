@@ -124,19 +124,42 @@
     <!-- 诊断结果 -->
     <div class="diagnosis-result" v-if="diagnosis && !diagnosing">
       <div class="result-header">
-        <el-tag type="success" size="large">
-          <el-icon><Check /></el-icon>
-          诊断完成
-        </el-tag>
-        <span class="process-time">耗时: {{ processTime }}s</span>
-        <el-button 
-          type="primary" 
-          :icon="Refresh"
-          @click="resetDiagnosis"
-          size="small"
-        >
-          重新诊断
-        </el-button>
+        <div class="header-left">
+          <el-tag type="success" size="large">
+            <el-icon><Check /></el-icon>
+            诊断完成
+          </el-tag>
+          <span class="process-time">耗时: {{ processTime }}s</span>
+        </div>
+        <div class="header-right">
+          <!-- 导出按钮组 -->
+          <el-dropdown @command="handleExport" trigger="click">
+            <el-button type="primary" :icon="Download" size="small">
+              导出报告
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="html">
+                  <el-icon><Files /></el-icon>
+                  导出为HTML
+                </el-dropdown-item>
+                <el-dropdown-item command="markdown">
+                  <el-icon><DocumentCopy /></el-icon>
+                  导出为Markdown
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button 
+            type="default" 
+            :icon="Refresh"
+            @click="resetDiagnosis"
+            size="small"
+          >
+            重新诊断
+          </el-button>
+        </div>
       </div>
       
       <!-- Markdown渲染区域 -->
@@ -157,9 +180,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { MagicStick, Link, Key, InfoFilled, Loading, Check, Refresh } from '@element-plus/icons-vue'
+import { MagicStick, Link, Key, InfoFilled, Loading, Check, Refresh, Download, ArrowDown, Files, DocumentCopy } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { getAIDiagnosisConfig, performAIDiagnosis } from '../api/aiDiagnosis'
+import { getAIDiagnosisConfig, performAIDiagnosis, exportToHtml, exportToMarkdown } from '../api/aiDiagnosis'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
@@ -328,6 +351,72 @@ function resetDiagnosis() {
   processTime.value = 0
 }
 
+// 导出报告
+async function handleExport(format) {
+  if (!diagnosis.value) {
+    ElMessage.warning('没有可导出的诊断报告')
+    return
+  }
+
+  try {
+    const loadingMessage = ElMessage({
+      message: `正在生成${format.toUpperCase()}格式报告...`,
+      type: 'info',
+      duration: 0,
+      icon: Loading
+    })
+
+    let response
+    
+    // 获取渲染后的HTML内容（包括完整样式）
+    const markdownElement = document.querySelector('.markdown-content')
+    const renderedHtml = markdownElement ? markdownElement.innerHTML : renderedMarkdown.value
+
+    switch (format) {
+      case 'html':
+        response = await exportToHtml(renderedHtml, diagnosis.value, props.collectorType, props.eventCount)
+        break
+      case 'markdown':
+        response = await exportToMarkdown(diagnosis.value, props.collectorType, props.eventCount)
+        break
+      default:
+        loadingMessage.close()
+        ElMessage.error('不支持的导出格式')
+        return
+    }
+
+    loadingMessage.close()
+
+    // 创建下载链接
+    const blob = new Blob([response.data])
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    
+    // 从响应头获取文件名
+    const contentDisposition = response.headers['content-disposition']
+    let fileName = `GCPulse_AI_Diagnosis_${Date.now()}.${format}`
+    
+    if (contentDisposition) {
+      const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (fileNameMatch && fileNameMatch[1]) {
+        fileName = fileNameMatch[1].replace(/['"]/g, '')
+      }
+    }
+    
+    link.setAttribute('download', fileName)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success(`${format.toUpperCase()}报告已成功下载！`)
+  } catch (err) {
+    console.error(`导出${format}失败:`, err)
+    ElMessage.error(`导出${format.toUpperCase()}失败: ${err.message || '未知错误'}`)
+  }
+}
+
 onUnmounted(() => {
   if (timer) {
     clearInterval(timer)
@@ -484,19 +573,29 @@ onUnmounted(() => {
     .result-header {
       display: flex;
       align-items: center;
-      gap: 15px;
+      justify-content: space-between;
       margin-bottom: 24px;
       padding-bottom: 20px;
       border-bottom: 2px solid #e9ecef;
+      flex-wrap: wrap;
+      gap: 15px;
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
 
       .process-time {
         color: #909399;
         font-size: 14px;
         font-family: 'Monaco', monospace;
-      }
-      
-      .el-button {
-        margin-left: auto;
       }
     }
 

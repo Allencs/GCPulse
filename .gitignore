@@ -19,3 +19,11 @@ logs/
 *.swp
 *~
 
+# 环境变量和密钥文件（敏感信息，不要提交到远程仓库）
+.env.local
+.env.*.local
+*-apikey.sh
+*-secrets.*
+application-local.yml
+application-secrets.yml
+

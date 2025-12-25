@@ -6,14 +6,25 @@
     </div>
     
     <template v-else>
-      <!-- 返回按钮 -->
-      <el-button 
-        class="back-btn" 
-        :icon="ArrowLeft" 
-        @click="goBack"
-      >
-        返回首页
-      </el-button>
+      <!-- 返回按钮和导出按钮 -->
+      <div class="top-actions">
+        <el-button 
+          class="back-btn" 
+          :icon="ArrowLeft" 
+          @click="goBack"
+        >
+          返回首页
+        </el-button>
+        <el-button 
+          v-if="activeTab === 'analysis'"
+          type="primary" 
+          :icon="Download" 
+          @click="exportToPdf"
+          :loading="exportingPdf"
+        >
+          导出为PDF
+        </el-button>
+      </div>
       
       <!-- 文件信息概览 -->
       <div class="analysis-card slide-in-up">
@@ -65,7 +76,7 @@
       </div>
       
       <!-- 分析结果Tab内容 -->
-      <div v-show="activeTab === 'analysis'" class="tab-content">
+      <div v-show="activeTab === 'analysis'" class="tab-content" ref="analysisContent">
         <!-- 连续 Full GC 警告（如果有） -->
         <ConsecutiveFullGCWarning 
           v-if="analysisData.diagnosisReport?.consecutiveFullGCInfo?.hasConsecutiveFullGC"
@@ -143,9 +154,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Loading, Document, Setting, DataLine, DataAnalysis, MagicStick } from '@element-plus/icons-vue'
+import { ArrowLeft, Loading, Document, Setting, DataLine, DataAnalysis, MagicStick, Download } from '@element-plus/icons-vue'
+import { ElMessage, ElLoading } from 'element-plus'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import KPIPanel from '../components/KPIPanel.vue'
 import ComprehensiveGCStats from '../components/ComprehensiveGCStats.vue'
 import MemorySizeCard from '../components/MemorySizeCard.vue'
@@ -166,6 +180,8 @@ const router = useRouter()
 const analysisData = ref(null)
 const gcLogFile = ref(null)
 const activeTab = ref('analysis')
+const analysisContent = ref(null)
+const exportingPdf = ref(false)
 
 onMounted(() => {
   // 从 Vue Router state 获取分析结果和原始文件
@@ -200,6 +216,205 @@ function formatFileSize(bytes) {
   }
   return bytes + ' B'
 }
+
+// 导出分析结果为PDF（截图方式）
+async function exportToPdf() {
+  if (!analysisData.value) {
+    ElMessage.warning('没有可导出的分析结果')
+    return
+  }
+
+  exportingPdf.value = true
+  let loadingInstance = null
+  
+  try {
+    loadingInstance = ElLoading.service({
+      lock: true,
+      text: '正在生成PDF报告，请稍候...',
+      background: 'rgba(0, 0, 0, 0.7)'
+    })
+
+    // 创建PDF文档 (A4尺寸)
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    const contentWidth = pageWidth - 2 * margin
+    let yOffset = margin
+
+    // 1. 添加封面
+    pdf.setFontSize(24)
+    pdf.setTextColor(102, 126, 234)
+    pdf.text('GCPulse 分析报告', pageWidth / 2, 40, { align: 'center' })
+    
+    pdf.setFontSize(12)
+    pdf.setTextColor(0, 0, 0)
+    pdf.text(`GC收集器: ${analysisData.value.collectorType}`, pageWidth / 2, 60, { align: 'center' })
+    pdf.text(`GC事件数: ${analysisData.value.gcEvents?.length || 0}`, pageWidth / 2, 70, { align: 'center' })
+    pdf.text(`生成时间: ${new Date().toLocaleString('zh-CN')}`, pageWidth / 2, 80, { align: 'center' })
+
+    // 等待页面完全渲染
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // 2. 截取文件概览
+    const fileOverview = document.querySelector('.file-overview')
+    if (fileOverview) {
+      pdf.addPage()
+      pdf.setFontSize(16)
+      pdf.setTextColor(64, 158, 255)
+      pdf.text('📋 文件概览', margin, 20)
+      
+      const canvas = await html2canvas(fileOverview, {
+        scale: 2,
+        logging: false,
+        useCORS: true
+      })
+      const imgData = canvas.toDataURL('image/png')
+      const imgHeight = (canvas.height * contentWidth) / canvas.width
+      pdf.addImage(imgData, 'PNG', margin, 30, contentWidth, imgHeight)
+    }
+
+    // 3. 截取KPI指标面板
+    loadingInstance.text = '正在截取KPI指标...'
+    const kpiPanel = document.querySelector('.kpi-panel')
+    if (kpiPanel) {
+      pdf.addPage()
+      pdf.setFontSize(16)
+      pdf.setTextColor(64, 158, 255)
+      pdf.text('📊 KPI指标', margin, 20)
+      
+      const canvas = await html2canvas(kpiPanel, {
+        scale: 2,
+        logging: false,
+        useCORS: true
+      })
+      const imgData = canvas.toDataURL('image/png')
+      const imgHeight = (canvas.height * contentWidth) / canvas.width
+      pdf.addImage(imgData, 'PNG', margin, 30, contentWidth, imgHeight)
+    }
+
+    // 4. 截取交互式图表的各个视图
+    loadingInstance.text = '正在截取交互式图表...'
+    const chartViews = [
+      { name: 'heapAfter', label: 'Heap After GC' },
+      { name: 'heapBefore', label: 'Heap Before GC' },
+      { name: 'duration', label: 'GC Duration' },
+      { name: 'reclaimed', label: 'Reclaimed Bytes' },
+      { name: 'youngGen', label: 'Young Generation' },
+      { name: 'oldGen', label: 'Old Generation' },
+      { name: 'allocation', label: 'Allocation & Promotion' },
+      { name: 'metaspace', label: 'Metaspace' }
+    ]
+
+    const chartPanel = document.querySelector('.chart-container')
+    if (chartPanel) {
+      for (const view of chartViews) {
+        // 检查按钮是否可用
+        const button = document.querySelector(`[data-view="${view.name}"]`) || 
+                      Array.from(document.querySelectorAll('.view-selector button'))
+                        .find(btn => btn.textContent.trim().includes(view.label.split(' ')[0]))
+        
+        if (button && !button.disabled) {
+          // 切换到对应视图
+          button.click()
+          await nextTick()
+          await new Promise(resolve => setTimeout(resolve, 800)) // 等待图表渲染
+          
+          // 截图
+          pdf.addPage()
+          pdf.setFontSize(16)
+          pdf.setTextColor(64, 158, 255)
+          pdf.text(`📈 ${view.label}`, margin, 20)
+          
+          const canvas = await html2canvas(chartPanel, {
+            scale: 2,
+            logging: false,
+            useCORS: true,
+            backgroundColor: '#ffffff'
+          })
+          const imgData = canvas.toDataURL('image/png')
+          const imgHeight = (canvas.height * contentWidth) / canvas.width
+          
+          // 如果图表太高，分页显示
+          if (imgHeight > pageHeight - 40) {
+            const scaledHeight = pageHeight - 40
+            pdf.addImage(imgData, 'PNG', margin, 30, contentWidth, scaledHeight)
+          } else {
+            pdf.addImage(imgData, 'PNG', margin, 30, contentWidth, imgHeight)
+          }
+          
+          loadingInstance.text = `正在截取: ${view.label}...`
+        }
+      }
+    }
+
+    // 5. 截取GC统计信息（在图表下方）
+    const gcStats = document.querySelector('.gc-statistics')
+    if (gcStats) {
+      pdf.addPage()
+      pdf.setFontSize(16)
+      pdf.setTextColor(64, 158, 255)
+      pdf.text('📊 GC统计信息', margin, 20)
+      
+      const canvas = await html2canvas(gcStats, {
+        scale: 2,
+        logging: false,
+        useCORS: true
+      })
+      const imgData = canvas.toDataURL('image/png')
+      const imgHeight = (canvas.height * contentWidth) / canvas.width
+      pdf.addImage(imgData, 'PNG', margin, 30, contentWidth, imgHeight)
+    }
+
+    // 6. 截取其他重要卡片
+    loadingInstance.text = '正在截取统计卡片...'
+    const cards = document.querySelectorAll('.analysis-card')
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i]
+      // 跳过图表面板（已经处理）
+      if (card.querySelector('.chart-container')) continue
+      
+      try {
+        const canvas = await html2canvas(card, {
+          scale: 2,
+          logging: false,
+          useCORS: true
+        })
+        
+        const imgData = canvas.toDataURL('image/png')
+        const imgHeight = (canvas.height * contentWidth) / canvas.width
+        
+        // 检查是否需要新页
+        if (imgHeight > pageHeight - 40) {
+          pdf.addPage()
+          const scaledHeight = pageHeight - 40
+          pdf.addImage(imgData, 'PNG', margin, 20, contentWidth, scaledHeight)
+        } else {
+          pdf.addPage()
+          pdf.addImage(imgData, 'PNG', margin, 20, contentWidth, imgHeight)
+        }
+      } catch (err) {
+        console.warn('截取卡片失败:', err)
+      }
+    }
+
+    // 保存PDF
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+    const fileName = `GCPulse_Analysis_${analysisData.value.collectorType}_${timestamp}.pdf`
+    pdf.save(fileName)
+
+    loadingInstance.close()
+    ElMessage.success('PDF报告已成功生成！')
+  } catch (err) {
+    console.error('导出PDF失败:', err)
+    if (loadingInstance) loadingInstance.close()
+    ElMessage.error(`导出PDF失败: ${err.message || '未知错误'}`)
+  } finally {
+    exportingPdf.value = false
+  }
+}
+
 </script>
 
 <style lang="scss" scoped>
@@ -207,8 +422,17 @@ function formatFileSize(bytes) {
   max-width: 1400px;
   margin: 0 auto;
   
-  .back-btn {
+  .top-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 24px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  
+  .back-btn {
+    // margin-bottom: 24px;
   }
   
   .file-overview {
