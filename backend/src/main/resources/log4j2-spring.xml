@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN" monitorInterval="30">
+    <!-- 定义属性 -->
+    <Properties>
+        <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight{%-5level}{FATAL=red blink, ERROR=red, WARN=yellow bold, INFO=green, DEBUG=cyan, TRACE=blue} %style{[%t]}{magenta} %style{%c{1.}}{cyan} - %msg%n</Property>
+        <Property name="LOG_FILE_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%t] %c{1.} - %msg%n</Property>
+        <Property name="LOG_PATH">logs</Property>
+    </Properties>
+
+    <!-- 定义Appenders -->
+    <Appenders>
+        <!-- 控制台输出 - 带高亮 -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${LOG_PATTERN}" disableAnsi="false"/>
+        </Console>
+
+        <!-- 文件输出 - 所有日志 -->
+        <RollingFile name="RollingFileAll" 
+                     fileName="${LOG_PATH}/gcpulse.log"
+                     filePattern="${LOG_PATH}/gcpulse-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${LOG_FILE_PATTERN}"/>
+            <Policies>
+                <!-- 基于时间的滚动策略 - 每天 -->
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <!-- 基于大小的滚动策略 - 100MB -->
+                <SizeBasedTriggeringPolicy size="100MB"/>
+            </Policies>
+            <!-- 保留最近30个文件 -->
+            <DefaultRolloverStrategy max="30">
+                <Delete basePath="${LOG_PATH}" maxDepth="1">
+                    <IfFileName glob="gcpulse-*.log.gz"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <!-- 文件输出 - 错误日志 -->
+        <RollingFile name="RollingFileError" 
+                     fileName="${LOG_PATH}/gcpulse-error.log"
+                     filePattern="${LOG_PATH}/gcpulse-error-%d{yyyy-MM-dd}-%i.log.gz">
+            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            <PatternLayout pattern="${LOG_FILE_PATTERN}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <SizeBasedTriggeringPolicy size="50MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="30">
+                <Delete basePath="${LOG_PATH}" maxDepth="1">
+                    <IfFileName glob="gcpulse-error-*.log.gz"/>
+                    <IfLastModified age="30d"/>
+                </Delete>
+            </DefaultRolloverStrategy>
+        </RollingFile>
+
+        <!-- 异步Appender - 提升性能 -->
+        <Async name="AsyncConsole">
+            <AppenderRef ref="Console"/>
+        </Async>
+        
+        <Async name="AsyncFile">
+            <AppenderRef ref="RollingFileAll"/>
+            <AppenderRef ref="RollingFileError"/>
+        </Async>
+    </Appenders>
+
+    <!-- 定义Loggers -->
+    <Loggers>
+        <!-- 项目日志 -->
+        <Logger name="com.gcpulse" level="INFO" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+        </Logger>
+
+        <!-- Spring框架日志 -->
+        <Logger name="org.springframework" level="INFO" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+        </Logger>
+
+        <!-- Hibernate/JPA日志 -->
+        <Logger name="org.hibernate" level="WARN" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+        </Logger>
+
+        <!-- Tomcat/Undertow日志 -->
+        <Logger name="org.apache.catalina" level="INFO" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+        </Logger>
+
+        <!-- 默认Root Logger -->
+        <Root level="INFO">
+            <AppenderRef ref="AsyncConsole"/>
+            <AppenderRef ref="AsyncFile"/>
+        </Root>
+    </Loggers>
+</Configuration>
+

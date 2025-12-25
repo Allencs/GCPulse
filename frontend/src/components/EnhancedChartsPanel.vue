@@ -455,19 +455,28 @@ function updateMainChart() {
 }
 
 function updateStatCharts() {
+  // 检测是否为ZGC（ZGC的eventType是"ZGC Cycle"）
+  const isZGC = props.gcEvents && props.gcEvents.length > 0 && 
+                props.gcEvents[0].eventType && 
+                props.gcEvents[0].eventType.includes('ZGC')
+  
   // Reclaimed Bytes Chart
   if (reclaimedChart && props.gcEvents) {
     // 正确区分 Young GC、Mixed GC 和 Full GC
-    const youngGCEvents = props.gcEvents.filter(e => 
-      !e.isFullGC && 
-      e.eventType && 
-      e.eventType.toLowerCase().includes('young') &&
-      !e.eventType.toLowerCase().includes('mixed')
-    )
-    const mixedGCEvents = props.gcEvents.filter(e => 
+    // ZGC特殊处理：ZGC Cycle作为一类单独统计
+    const youngGCEvents = isZGC ? 
+      props.gcEvents.filter(e => e.eventType && e.eventType.includes('ZGC')) :
+      props.gcEvents.filter(e => 
+        !e.isFullGC && 
+        e.eventType && 
+        e.eventType.toLowerCase().includes('young') &&
+        !e.eventType.toLowerCase().includes('mixed')
+      )
+    
+    const mixedGCEvents = isZGC ? [] : props.gcEvents.filter(e => 
       e.eventType && e.eventType.toLowerCase().includes('mixed')
     )
-    const fullGCEvents = props.gcEvents.filter(e => e.isFullGC)
+    const fullGCEvents = isZGC ? [] : props.gcEvents.filter(e => e.isFullGC)
     
     const youngGCReclaimed = calculateTotalReclaimed(youngGCEvents)
     const mixedGCReclaimed = calculateTotalReclaimed(mixedGCEvents)
@@ -493,8 +502,9 @@ function updateStatCharts() {
     const colors = ['#67C23A', '#409EFF', '#909399']
     
     if (youngGCReclaimedMB > 0) {
-      chartData.push({ value: youngGCReclaimedMB, name: 'Young GC', label: formatSize(youngGCReclaimedMB) })
-      xAxisData.push('Young GC')
+      const label = isZGC ? 'ZGC' : 'Young GC'
+      chartData.push({ value: youngGCReclaimedMB, name: label, label: formatSize(youngGCReclaimedMB) })
+      xAxisData.push(label)
     }
     if (mixedGCReclaimedMB > 0) {
       chartData.push({ value: mixedGCReclaimedMB, name: 'Mixed GC', label: formatSize(mixedGCReclaimedMB) })
@@ -539,21 +549,25 @@ function updateStatCharts() {
   
   // Cumulative Time Chart (饼图)
   if (cumulativeChart && props.gcEvents) {
-    const youngGCTime = calculateTotalTime(props.gcEvents.filter(e => 
-      !e.isFullGC && 
-      e.eventType && 
-      e.eventType.toLowerCase().includes('young') &&
-      !e.eventType.toLowerCase().includes('mixed')
-    ))
-    const mixedGCTime = calculateTotalTime(props.gcEvents.filter(e => 
+    const youngGCTime = isZGC ?
+      calculateTotalTime(props.gcEvents.filter(e => e.eventType && e.eventType.includes('ZGC'))) :
+      calculateTotalTime(props.gcEvents.filter(e => 
+        !e.isFullGC && 
+        e.eventType && 
+        e.eventType.toLowerCase().includes('young') &&
+        !e.eventType.toLowerCase().includes('mixed')
+      ))
+    const mixedGCTime = isZGC ? 0 : calculateTotalTime(props.gcEvents.filter(e => 
       e.eventType && e.eventType.toLowerCase().includes('mixed')
     ))
-    const fullGCTime = calculateTotalTime(props.gcEvents.filter(e => e.isFullGC))
+    const fullGCTime = isZGC ? 0 : calculateTotalTime(props.gcEvents.filter(e => e.isFullGC))
     
     // 构建数据数组，只包含有数据的类型
     const pieData = []
+    
     if (youngGCTime > 0) {
-      pieData.push({ value: youngGCTime, name: 'Young GC' })
+      const label = isZGC ? 'ZGC' : 'Young GC'
+      pieData.push({ value: youngGCTime, name: label })
     }
     if (mixedGCTime > 0) {
       pieData.push({ value: mixedGCTime, name: 'Mixed GC' })
@@ -585,16 +599,18 @@ function updateStatCharts() {
   
   // Average Time Chart
   if (avgTimeChart && props.gcEvents) {
-    const youngGCAvg = calculateAvgTime(props.gcEvents.filter(e => 
-      !e.isFullGC && 
-      e.eventType && 
-      e.eventType.toLowerCase().includes('young') &&
-      !e.eventType.toLowerCase().includes('mixed')
-    ))
-    const mixedGCAvg = calculateAvgTime(props.gcEvents.filter(e => 
+    const youngGCAvg = isZGC ?
+      calculateAvgTime(props.gcEvents.filter(e => e.eventType && e.eventType.includes('ZGC'))) :
+      calculateAvgTime(props.gcEvents.filter(e => 
+        !e.isFullGC && 
+        e.eventType && 
+        e.eventType.toLowerCase().includes('young') &&
+        !e.eventType.toLowerCase().includes('mixed')
+      ))
+    const mixedGCAvg = isZGC ? 0 : calculateAvgTime(props.gcEvents.filter(e => 
       e.eventType && e.eventType.toLowerCase().includes('mixed')
     ))
-    const fullGCAvg = calculateAvgTime(props.gcEvents.filter(e => e.isFullGC))
+    const fullGCAvg = isZGC ? 0 : calculateAvgTime(props.gcEvents.filter(e => e.isFullGC))
     
     // 构建数据数组，只包含有数据的类型
     const chartData = []
@@ -602,8 +618,9 @@ function updateStatCharts() {
     const colors = ['#67C23A', '#409EFF', '#909399']
     
     if (youngGCAvg > 0) {
-      chartData.push({ value: youngGCAvg, name: 'Young GC' })
-      xAxisData.push('Young GC')
+      const label = isZGC ? 'ZGC' : 'Young GC'
+      chartData.push({ value: youngGCAvg, name: label })
+      xAxisData.push(label)
     }
     if (mixedGCAvg > 0) {
       chartData.push({ value: mixedGCAvg, name: 'Mixed GC' })

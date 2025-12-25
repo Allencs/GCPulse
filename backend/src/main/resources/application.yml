@@ -11,14 +11,6 @@ spring:
       max-request-size: 500MB
       file-size-threshold: 10MB
 
-# 日志配置
-logging:
-  level:
-    com.gcpulse: INFO
-    org.springframework: INFO
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
-
 # CORS配置
 cors:
   allowed-origins: http://localhost:5173,http://localhost:3000

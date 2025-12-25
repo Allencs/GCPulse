@@ -12,92 +12,142 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 4px;
   
   &:hover {
-    background: #555;
+    background: linear-gradient(135deg, #5568d3 0%, #653a8b 100%);
   }
 }
 
 // 卡片样式
 .analysis-card {
   background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
   margin-bottom: 24px;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   
   &:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+    transform: translateY(-2px);
   }
   
   .card-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #303133;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a1a;
     margin-bottom: 20px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f0f0f0;
     
     .el-icon {
-      font-size: 20px;
-      color: #409EFF;
+      font-size: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
   }
   
   .card-content {
-    color: #606266;
+    color: #4a5568;
+    line-height: 1.8;
   }
 }
 
 // 统计数字样式
 .stat-number {
-  font-size: 32px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   line-height: 1.2;
+  letter-spacing: -0.5px;
 }
 
 .stat-label {
   font-size: 14px;
   color: #909399;
   margin-top: 8px;
+  font-weight: 500;
 }
 
 // 标签样式
 .gc-tag {
-  padding: 4px 12px;
-  border-radius: 4px;
+  padding: 6px 14px;
+  border-radius: 6px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
   
   &.success {
-    background: #f0f9ff;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e8f5e9 100%);
     color: #67c23a;
     border: 1px solid #b3e19d;
+    
+    &:hover {
+      background: linear-gradient(135deg, #e8f5ff 0%, #d9f0db 100%);
+    }
   }
   
   &.warning {
-    background: #fdf6ec;
+    background: linear-gradient(135deg, #fdf6ec 0%, #fff8e1 100%);
     color: #e6a23c;
     border: 1px solid #f5dab1;
+    
+    &:hover {
+      background: linear-gradient(135deg, #fcf3e3 0%, #fff6d9 100%);
+    }
   }
   
   &.danger {
-    background: #fef0f0;
+    background: linear-gradient(135deg, #fef0f0 0%, #ffebee 100%);
     color: #f56c6c;
     border: 1px solid #fbc4c4;
+    
+    &:hover {
+      background: linear-gradient(135deg, #fde8e8 0%, #ffe3e5 100%);
+    }
   }
   
   &.info {
-    background: #f4f4f5;
+    background: linear-gradient(135deg, #f4f4f5 0%, #f5f7fa 100%);
     color: #909399;
     border: 1px solid #d3d4d6;
+    
+    &:hover {
+      background: linear-gradient(135deg, #ececed 0%, #eef0f3 100%);
+    }
+  }
+}
+
+// 按钮样式增强
+.el-button {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  &.el-button--primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
   }
 }
 
@@ -116,8 +166,17 @@
   }
   
   .analysis-card {
-    padding: 16px;
+    padding: 20px;
     margin-bottom: 16px;
+    border-radius: 12px;
+    
+    .card-title {
+      font-size: 18px;
+    }
+  }
+  
+  .stat-number {
+    font-size: 28px;
   }
 }
 
@@ -134,7 +193,20 @@
 }
 
 .slide-in-up {
-  animation: slideInUp 0.5s ease-out;
+  animation: slideInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-in-out;
 }
 
 // Loading样式
@@ -143,17 +215,24 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 80px 20px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
   
   .el-icon {
-    font-size: 48px;
-    color: #409EFF;
-    margin-bottom: 16px;
+    font-size: 64px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 20px;
+    animation: pulse 1.5s ease-in-out infinite;
   }
   
   .loading-text {
-    font-size: 16px;
-    color: #606266;
+    font-size: 18px;
+    font-weight: 600;
+    color: #303133;
     margin-bottom: 8px;
   }
   
@@ -162,4 +241,55 @@
     color: #909399;
   }
 }
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+// 渐变文本
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 700;
+}
+
+// 统一间距
+.section-spacing {
+  margin-bottom: 32px;
+}
+
+// 统一圆角
+.rounded-card {
+  border-radius: 16px;
+}
+
+.rounded-button {
+  border-radius: 8px;
+}
+
+// 统一阴影
+.shadow-sm {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-md {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.shadow-lg {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.shadow-primary {
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+}
+
 

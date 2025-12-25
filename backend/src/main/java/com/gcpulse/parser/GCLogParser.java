@@ -1,6 +1,7 @@
 package com.gcpulse.parser;
 
 import com.gcpulse.model.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
@@ -16,6 +17,7 @@ import java.util.regex.Pattern;
  * 负责检测GC类型并委托给具体的解析器实现
  * 同时负责聚合指标计算和诊断报告生成
  */
+@Slf4j
 @Component
 public class GCLogParser {
     
@@ -120,11 +122,11 @@ public class GCLogParser {
     private AbstractGCLogParser detectAndSelectParser(List<String> lines) {
         for (AbstractGCLogParser parser : parsers) {
             if (parser.canParse(lines)) {
-                System.out.println("选择解析器: " + parser.getGCType());
+                log.info("选择解析器: {}", parser.getGCType());
                 return parser;
             }
         }
-        System.out.println("未找到合适的解析器，使用默认解析器");
+        log.info("未找到合适的解析器，使用默认解析器");
             return null;
     }
     
@@ -290,18 +292,26 @@ public class GCLogParser {
         
         // 对于ZGC，从日志中提取额外的信息
         if ("ZGC".equals(collectorType)) {
-            Pattern allocPattern = Pattern.compile("\\[gc,heap\\s*\\] GC\\(\\d+\\) Allocated:.*?(\\d+)M \\(\\d+%\\)[^\\d]*$");
-            Pattern reclaimedPattern = Pattern.compile("\\[gc,heap\\s*\\] GC\\(\\d+\\) Reclaimed:.*?(\\d+)M \\(\\d+%\\)\\s+\\S+\\s+\\S+\\s*$");
+            // ZGC heap info表格格式:
+            // [gc,heap] GC(0) Allocated:         -           12M (0%)          16M (0%)          23M (0%)             -                  -
+            // [gc,heap] GC(0) Reclaimed:         -            -                4M (0%)          425M (8%)            -                  -
+            // 我们需要提取最后一个阶段(Relocate End)的值
+            Pattern allocPattern = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\(\\d+\\)\\s+Allocated:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
+            Pattern reclaimedPattern = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\(\\d+\\)\\s+Reclaimed:\\s+-\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
             
             for (String line : lines) {
                 Matcher allocMatcher = allocPattern.matcher(line);
                 if (allocMatcher.find()) {
-                    totalCreated += Long.parseLong(allocMatcher.group(1)) * 1024 * 1024;
+                    // 使用Relocate End的值（第3个值）
+                    long allocated = Long.parseLong(allocMatcher.group(3)) * 1024 * 1024;
+                    totalCreated += allocated;
                 }
                 
                 Matcher reclaimedMatcher = reclaimedPattern.matcher(line);
                 if (reclaimedMatcher.find()) {
-                    totalReclaimed += Long.parseLong(reclaimedMatcher.group(1)) * 1024 * 1024;
+                    // 使用Relocate End的值（第2个值）
+                    long reclaimed = Long.parseLong(reclaimedMatcher.group(2)) * 1024 * 1024;
+                    totalReclaimed += reclaimed;
                 }
             }
         }

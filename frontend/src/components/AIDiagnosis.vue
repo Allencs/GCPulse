@@ -13,7 +13,7 @@
       type="success"
       :closable="false"
       show-icon
-      style="margin-bottom: 20px"
+      style="margin: 20px 30px"
     >
       <template #default>
         <p>✅ API已配置 | 🤖 模型: {{ backendConfig.defaultModel }}</p>
@@ -337,188 +337,422 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .ai-diagnosis-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
-  color: white;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
   margin-bottom: 30px;
 
   .card-title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     font-size: 24px;
-    font-weight: 600;
-    margin-bottom: 20px;
+    font-weight: 700;
+    padding: 24px 30px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-bottom: 3px solid rgba(255, 255, 255, 0.2);
+
+    .el-icon {
+      font-size: 28px;
+    }
 
     .subtitle {
-      font-size: 14px;
-      opacity: 0.8;
+      font-size: 13px;
+      opacity: 0.9;
       font-weight: 400;
+      margin-left: auto;
     }
   }
 
   .config-section {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 20px;
-    border-radius: 8px;
-    backdrop-filter: blur(10px);
+    padding: 30px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
 
     .form-tip {
       font-size: 12px;
-      color: rgba(255, 255, 255, 0.7);
+      color: #909399;
       margin-top: 5px;
+      line-height: 1.5;
     }
 
     .tips-box {
       display: flex;
-      gap: 10px;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 15px;
-      border-radius: 8px;
+      gap: 12px;
+      background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+      padding: 20px;
+      border-radius: 12px;
       margin-top: 20px;
+      border-left: 4px solid #667eea;
+
+      .el-icon {
+        color: #667eea;
+        font-size: 20px;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      p {
+        margin: 0 0 10px 0;
+        color: #303133;
+        
+        strong {
+          color: #667eea;
+          font-weight: 600;
+        }
+      }
 
       ul {
         margin: 10px 0 0 0;
         padding-left: 20px;
 
         li {
-          margin-bottom: 5px;
+          margin-bottom: 8px;
           font-size: 13px;
+          color: #606266;
+          line-height: 1.6;
         }
       }
 
       a {
-        color: #90caf9;
-        text-decoration: underline;
+        color: #409EFF;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.2s;
+        
+        &:hover {
+          color: #66b1ff;
+          text-decoration: underline;
+        }
       }
 
       code {
-        background: rgba(0, 0, 0, 0.2);
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-family: 'Courier New', monospace;
+        background: rgba(102, 126, 234, 0.1);
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+        font-size: 12px;
+        color: #667eea;
+        font-weight: 500;
       }
     }
   }
 
   .diagnosing-section {
     text-align: center;
-    padding: 40px 20px;
+    padding: 60px 30px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
 
     .loading-animation {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
 
       .rotating {
-        font-size: 60px;
+        font-size: 64px;
+        color: #667eea;
         animation: rotate 2s linear infinite;
+        filter: drop-shadow(0 4px 12px rgba(102, 126, 234, 0.3));
       }
     }
 
     h3 {
       font-size: 20px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+      color: #303133;
+      font-weight: 600;
     }
 
     .loading-tips {
       font-size: 14px;
-      opacity: 0.8;
-      margin-bottom: 20px;
+      color: #909399;
+      margin-bottom: 24px;
+      font-style: italic;
     }
 
     .time-elapsed {
-      margin-top: 15px;
+      margin-top: 20px;
       font-size: 14px;
-      opacity: 0.7;
+      color: #C0C4CC;
+      font-family: 'Monaco', monospace;
     }
   }
 
   .diagnosis-result {
+    padding: 30px;
+    background: #fafbfc;
+    
     .result-header {
       display: flex;
       align-items: center;
       gap: 15px;
-      margin-bottom: 20px;
-      padding-bottom: 15px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #e9ecef;
 
       .process-time {
-        opacity: 0.8;
+        color: #909399;
+        font-size: 14px;
+        font-family: 'Monaco', monospace;
+      }
+      
+      .el-button {
+        margin-left: auto;
       }
     }
 
     .markdown-content {
       background: white;
-      color: #333;
-      padding: 25px;
-      border-radius: 8px;
-      max-height: 600px;
-      overflow-y: auto;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+      border: 1px solid #e9ecef;
+      line-height: 1.8;
+      max-height: none;
+      overflow: visible;
 
-      :deep(h1), :deep(h2), :deep(h3) {
-        margin-top: 20px;
-        margin-bottom: 10px;
-        color: #333;
+      // 标题样式
+      :deep(h1) {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-top: 0;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 3px solid #667eea;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
       }
 
       :deep(h2) {
-        border-bottom: 2px solid #eee;
-        padding-bottom: 10px;
-      }
-
-      :deep(ul), :deep(ol) {
-        margin: 10px 0;
-        padding-left: 30px;
-
-        li {
-          margin: 5px 0;
+        font-size: 22px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-top: 32px;
+        margin-bottom: 16px;
+        padding-left: 12px;
+        border-left: 4px solid #667eea;
+        position: relative;
+        
+        &::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 0;
+          height: 100%;
+          width: 4px;
+          background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
         }
       }
 
+      :deep(h3) {
+        font-size: 18px;
+        font-weight: 600;
+        color: #34495e;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        
+        &::before {
+          content: '▸';
+          color: #667eea;
+          margin-right: 8px;
+          font-weight: 700;
+        }
+      }
+
+      :deep(h4) {
+        font-size: 16px;
+        font-weight: 600;
+        color: #5a6c7d;
+        margin-top: 20px;
+        margin-bottom: 10px;
+      }
+
+      // 段落样式
+      :deep(p) {
+        margin: 12px 0;
+        color: #4a5568;
+        font-size: 15px;
+        line-height: 1.8;
+      }
+
+      // 列表样式
+      :deep(ul), :deep(ol) {
+        margin: 16px 0;
+        padding-left: 32px;
+
+        li {
+          margin: 10px 0;
+          color: #4a5568;
+          line-height: 1.8;
+          position: relative;
+          
+          &::marker {
+            color: #667eea;
+            font-weight: 600;
+          }
+          
+          // 嵌套列表
+          ul, ol {
+            margin: 8px 0;
+          }
+        }
+      }
+
+      :deep(ul li) {
+        list-style-type: disc;
+        
+        ul li {
+          list-style-type: circle;
+        }
+      }
+
+      // 代码样式
+      :deep(code) {
+        background: linear-gradient(135deg, #f7f8fa 0%, #eef0f4 100%);
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+        font-size: 13px;
+        color: #e83e8c;
+        border: 1px solid #e1e4e8;
+        font-weight: 500;
+      }
+
       :deep(pre) {
-        background: #2d2d2d;
-        color: #f8f8f2;
-        padding: 15px;
-        border-radius: 5px;
+        background: #1e1e1e;
+        padding: 20px;
+        border-radius: 8px;
         overflow-x: auto;
-        margin: 15px 0;
+        margin: 20px 0;
+        border: 1px solid #333;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        position: relative;
+
+        &::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 3px;
+          background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        }
 
         code {
           background: none;
           padding: 0;
-          font-family: 'Fira Code', 'Courier New', monospace;
+          border: none;
+          color: #d4d4d4;
+          font-size: 13px;
+          line-height: 1.6;
+          font-weight: 400;
         }
       }
 
-      :deep(code) {
-        background: #f5f5f5;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-family: 'Courier New', monospace;
-        color: #e83e8c;
-      }
-
+      // 引用样式
       :deep(blockquote) {
         border-left: 4px solid #667eea;
-        padding-left: 15px;
-        margin: 15px 0;
-        color: #666;
+        padding: 16px 20px;
+        margin: 20px 0;
+        background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
+        border-radius: 0 8px 8px 0;
+        color: #5a6c7d;
+        font-style: italic;
+        
+        p {
+          margin: 0;
+        }
       }
 
+      // 表格样式
       :deep(table) {
         width: 100%;
-        border-collapse: collapse;
-        margin: 15px 0;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin: 20px 0;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 
         th, td {
-          border: 1px solid #ddd;
-          padding: 10px;
+          border: 1px solid #e1e4e8;
+          padding: 12px 16px;
           text-align: left;
         }
 
         th {
-          background: #f5f5f5;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          font-weight: 600;
+          font-size: 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        tbody tr {
+          background: white;
+          transition: background 0.2s;
+          
+          &:nth-child(even) {
+            background: #f8f9fa;
+          }
+          
+          &:hover {
+            background: #e3f2fd;
+          }
+        }
+
+        td {
+          color: #4a5568;
+          font-size: 14px;
+        }
+      }
+
+      // 水平线样式
+      :deep(hr) {
+        border: none;
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, #667eea 50%, transparent 100%);
+        margin: 32px 0;
+      }
+
+      // 链接样式
+      :deep(a) {
+        color: #409EFF;
+        text-decoration: none;
+        font-weight: 500;
+        border-bottom: 1px solid transparent;
+        transition: all 0.2s;
+        
+        &:hover {
+          color: #66b1ff;
+          border-bottom-color: #66b1ff;
+        }
+      }
+
+      // 强调样式
+      :deep(strong) {
+        color: #2c3e50;
+        font-weight: 700;
+      }
+
+      :deep(em) {
+        color: #5a6c7d;
+        font-style: italic;
+      }
+
+      // 删除线
+      :deep(del) {
+        color: #909399;
+        text-decoration: line-through;
+      }
+
+      // 数字高亮
+      :deep(p), :deep(li) {
+        // 让数字更醒目
+        span.number {
+          color: #667eea;
           font-weight: 600;
         }
       }
@@ -536,17 +770,86 @@ onUnmounted(() => {
 }
 
 .slide-in-up {
-  animation: slideInUp 0.5s ease-out;
+  animation: slideInUp 0.6s ease-out;
 }
 
 @keyframes slideInUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(30px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
+// 响应式设计
+@media (max-width: 768px) {
+  .ai-diagnosis-card {
+    .card-title {
+      font-size: 20px;
+      padding: 20px;
+      flex-wrap: wrap;
+      
+      .subtitle {
+        margin-left: 0;
+        width: 100%;
+        margin-top: 4px;
+      }
+    }
+
+    .config-section,
+    .diagnosis-result {
+      padding: 20px;
+    }
+
+    .diagnosis-result .markdown-content {
+      padding: 20px;
+      
+      :deep(h1) {
+        font-size: 24px;
+      }
+      
+      :deep(h2) {
+        font-size: 20px;
+      }
+      
+      :deep(h3) {
+        font-size: 16px;
+      }
+      
+      :deep(table) {
+        font-size: 12px;
+        
+        th, td {
+          padding: 8px 10px;
+        }
+      }
+    }
+  }
+}
+
+// 滚动条样式
+.markdown-content {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 4px;
+    
+    &:hover {
+      background: linear-gradient(135deg, #5568d3 0%, #653a8b 100%);
+    }
+  }
+}
 </style>
+

@@ -258,13 +258,21 @@ const youngStats = computed(() => {
     return getEmptyStats()
   }
   
+  // 检测是否为ZGC
+  const isZGC = props.gcEvents.length > 0 && 
+                props.gcEvents[0].eventType && 
+                props.gcEvents[0].eventType.includes('ZGC')
+  
   // 只统计 Young GC，排除 Mixed GC 和 Full GC
-  const youngEvents = props.gcEvents.filter(e => 
-    !e.isFullGC && 
-    e.eventType && 
-    e.eventType.toLowerCase().includes('young') &&
-    !e.eventType.toLowerCase().includes('mixed')
-  )
+  // ZGC特殊处理：所有ZGC Cycle都作为Young GC统计
+  const youngEvents = isZGC ?
+    props.gcEvents.filter(e => e.eventType && e.eventType.includes('ZGC')) :
+    props.gcEvents.filter(e => 
+      !e.isFullGC && 
+      e.eventType && 
+      e.eventType.toLowerCase().includes('young') &&
+      !e.eventType.toLowerCase().includes('mixed')
+    )
   
   if (youngEvents.length === 0) {
     return getEmptyStats()

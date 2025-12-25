@@ -3,6 +3,7 @@ package com.gcpulse.controller;
 import com.gcpulse.model.AIDiagnosisRequest;
 import com.gcpulse.model.AIDiagnosisResponse;
 import com.gcpulse.service.AIDiagnosisService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -12,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * AI诊断Controller
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/ai")
 @CrossOrigin(origins = "*")
@@ -41,12 +43,12 @@ public class AIDiagnosisController {
             String finalApiKey = (apiKey != null && !apiKey.trim().isEmpty()) ? apiKey : null;
             String finalModel = (model != null && !model.trim().isEmpty()) ? model : null;
             
-            System.out.println("AI诊断请求参数:");
-            System.out.println("  - apiUrl: " + (finalApiUrl != null ? finalApiUrl : "[使用后端配置]"));
-            System.out.println("  - apiKey: " + (finalApiKey != null ? "***" : "[使用后端配置]"));
-            System.out.println("  - model: " + (finalModel != null ? finalModel : "[使用后端配置]"));
-            System.out.println("  - collectorType: " + collectorType);
-            System.out.println("  - eventCount: " + eventCount);
+            log.info("AI诊断请求参数:");
+            log.info("  - apiUrl: {}", finalApiUrl != null ? finalApiUrl : "[使用后端配置]");
+            log.info("  - apiKey: {}", finalApiKey != null ? "***" : "[使用后端配置]");
+            log.info("  - model: {}", finalModel != null ? finalModel : "[使用后端配置]");
+            log.info("  - collectorType: {}", collectorType);
+            log.info("  - eventCount: {}", eventCount);
             
             // 构建请求
             AIDiagnosisRequest request = AIDiagnosisRequest.builder()

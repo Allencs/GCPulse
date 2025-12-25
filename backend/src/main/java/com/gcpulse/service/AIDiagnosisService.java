@@ -8,6 +8,7 @@ import com.theokanning.openai.completion.chat.ChatCompletionRequest;
 import com.theokanning.openai.completion.chat.ChatMessage;
 import com.theokanning.openai.completion.chat.ChatMessageRole;
 import com.theokanning.openai.service.OpenAiService;
+import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import okhttp3.MediaType;
 import okhttp3.Request;
@@ -31,6 +32,7 @@ import java.util.Map;
 /**
  * AI诊断服务
  */
+@Slf4j
 @Service
 public class AIDiagnosisService {
     
@@ -89,14 +91,14 @@ public class AIDiagnosisService {
             if (apiUrl != null && !apiUrl.trim().isEmpty() && 
                 !apiUrl.equals("https://api.openai.com/v1")) {
                 
-                System.out.println("使用自定义API地址(OpenRouter): " + apiUrl);
+                log.info("使用自定义API地址(OpenRouter): {}", apiUrl);
                 
                 // 对于 OpenRouter，直接使用 OkHttp 发送请求
                 return diagnoseWithCustomApi(apiUrl, finalApiKey, model, request, startTime, timeout);
                 
             } else {
                 // 使用官方OpenAI API
-                System.out.println("使用OpenAI官方API");
+                log.info("使用OpenAI官方API");
                 OpenAiService service = new OpenAiService(finalApiKey, timeout);
             
                 // 构建对话消息
@@ -108,7 +110,7 @@ public class AIDiagnosisService {
                 // 用户消息：提供GC日志和上下文信息
                 messages.add(new ChatMessage(ChatMessageRole.USER.value(), buildUserPrompt(request)));
                 
-                System.out.println("使用AI模型: " + model);
+                log.info("使用AI模型: {}", model);
                 
                 ChatCompletionRequest chatRequest = ChatCompletionRequest.builder()
                         .model(model)
@@ -226,8 +228,8 @@ public class AIDiagnosisService {
     private AIDiagnosisResponse diagnoseWithCustomApi(String apiUrl, String apiKey, String model, 
                                                        AIDiagnosisRequest request, long startTime, Duration timeout) {
         try {
-            System.out.println("使用自定义API模型: " + model);
-            System.out.println("请求端点: " + apiUrl);
+            log.info("使用自定义API模型: {}", model);
+            log.info("请求端点: {}", apiUrl);
             
             // 构建请求体
             Map<String, Object> requestBody = new HashMap<>();
@@ -253,7 +255,7 @@ public class AIDiagnosisService {
             ObjectMapper objectMapper = new ObjectMapper();
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             
-            System.out.println("请求体大小: " + jsonBody.length() + " bytes");
+            log.debug("请求体大小: {} bytes", jsonBody.length());
             
             // 创建 OkHttpClient
             OkHttpClient client = new OkHttpClient.Builder()
@@ -272,17 +274,17 @@ public class AIDiagnosisService {
                     .header("Content-Type", "application/json")
                     .build();
             
-            System.out.println("发送请求到: " + httpRequest.url());
+            log.debug("发送请求到: {}", httpRequest.url());
             
             // 发送请求
             try (Response response = client.newCall(httpRequest).execute()) {
                 String responseBody = response.body() != null ? response.body().string() : "";
                 
-                System.out.println("响应状态码: " + response.code());
-                System.out.println("响应体长度: " + responseBody.length() + " bytes");
+                log.info("响应状态码: {}", response.code());
+                log.debug("响应体长度: {} bytes", responseBody.length());
                 
                 if (!response.isSuccessful()) {
-                    System.err.println("API请求失败: " + responseBody);
+                    log.error("API请求失败: {}", responseBody);
                     return AIDiagnosisResponse.builder()
                             .success(false)
                             .error("API请求失败 (状态码 " + response.code() + "): " + responseBody)
@@ -299,7 +301,7 @@ public class AIDiagnosisService {
                         .path("content")
                         .asText();
                 
-                System.out.println("AI诊断成功，响应长度: " + diagnosis.length() + " chars");
+                log.info("AI诊断成功，响应长度: {} chars", diagnosis.length());
                 
                 return AIDiagnosisResponse.builder()
                         .success(true)
@@ -309,8 +311,7 @@ public class AIDiagnosisService {
             }
             
         } catch (Exception e) {
-            System.err.println("自定义API诊断失败: " + e.getMessage());
-            e.printStackTrace();
+            log.error("自定义API诊断失败: {}", e.getMessage(), e);
             return AIDiagnosisResponse.builder()
                     .success(false)
                     .error("AI诊断失败: " + e.getMessage())

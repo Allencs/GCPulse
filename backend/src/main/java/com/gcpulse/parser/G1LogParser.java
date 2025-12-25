@@ -2,6 +2,7 @@ package com.gcpulse.parser;
 
 import com.gcpulse.model.GCEvent;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -11,6 +12,7 @@ import java.util.regex.Pattern;
  * G1GC日志解析器
  * 支持JDK 8传统格式和JDK 9+ Unified Logging格式
  */
+@Slf4j
 @Component
 public class G1LogParser extends AbstractGCLogParser {
     
@@ -68,16 +70,16 @@ public class G1LogParser extends AbstractGCLogParser {
     private G1LogFormat detectG1LogFormat(List<String> lines) {
         for (String line : lines) {
             if (line.matches("\\[\\d{4}-\\d{2}-\\d{2}T.*?\\]\\[.*?\\]\\[gc.*?\\].*")) {
-                System.out.println("检测到JDK 9+ G1 Unified Logging格式");
+                log.info("检测到JDK 9+ G1 Unified Logging格式");
                 return G1LogFormat.JDK9_UNIFIED;
             }
             if (line.matches(".*\\d+\\.\\d+:\\s*\\[GC pause.*") || 
                 line.matches(".*\\d{4}-\\d{2}-\\d{2}T.*?:\\s*\\d+\\.\\d+:\\s*\\[GC pause.*")) {
-                System.out.println("检测到JDK 8 G1传统格式");
+                log.info("检测到JDK 8 G1传统格式");
                 return G1LogFormat.JDK8_TRADITIONAL;
             }
         }
-        System.out.println("未检测到明确的G1格式，默认使用JDK 8传统格式");
+        log.info("未检测到明确的G1格式，默认使用JDK 8传统格式");
         return G1LogFormat.JDK8_TRADITIONAL;
     }
     
@@ -136,7 +138,7 @@ public class G1LogParser extends AbstractGCLogParser {
                     }
                 }
             } catch (Exception e) {
-                System.err.println("解析G1 JDK8事件失败: " + e.getMessage());
+                log.error("解析G1 JDK8事件失败: {}", e.getMessage());
             }
         }
         
@@ -147,11 +149,11 @@ public class G1LogParser extends AbstractGCLogParser {
                     events.add(event);
                 }
             } catch (Exception e) {
-                System.err.println("解析最后一个G1 JDK8事件失败: " + e.getMessage());
+                log.error("解析最后一个G1 JDK8事件失败: {}", e.getMessage());
             }
         }
         
-        System.out.println("解析到 " + events.size() + " 个G1 GC事件（JDK 8传统格式），检测到 " + gcStartLineCount + " 个GC开始行");
+        log.info("解析到 {} 个G1 GC事件（JDK 8传统格式），检测到 {} 个GC开始行", events.size(), gcStartLineCount);
         return events;
     }
     
@@ -300,6 +302,7 @@ public class G1LogParser extends AbstractGCLogParser {
         List<GCEvent> events = new ArrayList<>();
         Map<String, GCEventData> gcEventMap = new HashMap<>();
         
+        // 第一遍：收集所有GC事件的基本信息
         for (String line : lines) {
             try {
                 Matcher endMatcher = G1GC_UNIFIED_END_PATTERN.matcher(line);
@@ -330,29 +333,221 @@ public class G1LogParser extends AbstractGCLogParser {
                         .total((long) (heapTotal * 1024 * 1024))
                         .build();
                     
-                    GCEvent event = GCEvent.builder()
-                            .timestamp(timestamp)
-                            .eventType(gcType)
-                            .gcCause(gcCause)
-                            .pauseTime(pauseTime)
-                            .concurrentTime(0.0)
-                            .heapMemory(heapMemory)
-                            .isFullGC(isFullGC)
-                            .isLongPause(pauseTime > 100)
-                            .build();
-                    
-                    events.add(event);
-                    
                     GCEventData data = new GCEventData();
-                    data.event = event;
+                    data.gcId = gcId;
+                    data.timestamp = timestamp;
+                    data.gcType = gcType;
+                    data.gcCause = gcCause;
+                    data.pauseTime = pauseTime;
+                    data.isFullGC = isFullGC;
+                    data.heapMemory = heapMemory;
+                    
                     gcEventMap.put(gcId, data);
                 }
             } catch (Exception e) {
-                System.err.println("解析G1 Unified Logging失败: " + e.getMessage());
+                log.error("解析G1 Unified Logging基本信息失败: {}", e.getMessage());
             }
         }
         
-        System.out.println("解析到 " + events.size() + " 个G1 GC事件（Unified Logging格式）");
+        // 第二遍：收集详细的内存区域信息
+        Pattern heapBeforePattern = Pattern.compile("\\[.*?\\]\\[debug\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*garbage-first heap\\s+total\\s+(\\d+)K,\\s+used\\s+(\\d+)K.*");
+        Pattern youngRegionsBeforePattern = Pattern.compile("\\[.*?\\]\\[debug\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+region size\\s+\\d+K,\\s+(\\d+)\\s+young\\s+\\((\\d+)K\\),\\s+(\\d+)\\s+survivors\\s+\\((\\d+)K\\)");
+        Pattern edenRegionsPattern = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*Eden regions:\\s*(\\d+)->(\\d+)\\((\\d+)\\)");
+        Pattern survivorRegionsPattern = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*Survivor regions:\\s*(\\d+)->(\\d+)\\((\\d+)\\)");
+        Pattern oldRegionsPattern = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*Old regions:\\s*(\\d+)->(\\d+)");
+        Pattern humongousRegionsPattern = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s*Humongous regions:\\s*(\\d+)->(\\d+)");
+        Pattern metaspacePattern = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,metaspace\\]\\s*GC\\((\\d+)\\)\\s*Metaspace:\\s*(\\d+)K\\((\\d+)K\\)->(\\d+)K\\((\\d+)K\\)");
+        
+        long regionSize = 1024 * 1024; // 默认1MB，从日志中读取
+        Pattern regionSizePattern = Pattern.compile("\\[.*?\\]\\[info\\s*\\]\\[gc,init\\]\\s*Heap Region Size:\\s*(\\d+)([KMG])");
+        
+        for (String line : lines) {
+            try {
+                // 提取region大小
+                Matcher regionSizeMatcher = regionSizePattern.matcher(line);
+                if (regionSizeMatcher.find()) {
+                    long size = Long.parseLong(regionSizeMatcher.group(1));
+                    String unit = regionSizeMatcher.group(2);
+                    if (unit.equals("K")) {
+                        regionSize = size * 1024;
+                    } else if (unit.equals("M")) {
+                        regionSize = size * 1024 * 1024;
+                    } else if (unit.equals("G")) {
+                        regionSize = size * 1024 * 1024 * 1024;
+                    }
+                    log.info("检测到G1 Region大小: {} bytes", regionSize);
+                    continue;
+                }
+                
+                // 提取Heap before信息（包含young和survivor的详细信息）
+                Matcher youngRegionsMatcher = youngRegionsBeforePattern.matcher(line);
+                if (youngRegionsMatcher.find()) {
+                    String gcId = youngRegionsMatcher.group(1);
+                    GCEventData data = gcEventMap.get(gcId);
+                    if (data != null) {
+                        int youngRegions = Integer.parseInt(youngRegionsMatcher.group(2));
+                        long youngSize = Long.parseLong(youngRegionsMatcher.group(3)) * 1024;
+                        int survivorRegions = Integer.parseInt(youngRegionsMatcher.group(4));
+                        long survivorSize = Long.parseLong(youngRegionsMatcher.group(5)) * 1024;
+                        
+                        data.youngBeforeRegions = youngRegions;
+                        data.youngBeforeSize = youngSize;
+                        data.survivorBeforeSize = survivorSize;
+                    }
+                    continue;
+                }
+                
+                // 提取Eden regions信息
+                Matcher edenMatcher = edenRegionsPattern.matcher(line);
+                if (edenMatcher.find()) {
+                    String gcId = edenMatcher.group(1);
+                    GCEventData data = gcEventMap.get(gcId);
+                    if (data != null) {
+                        data.edenBeforeRegions = Integer.parseInt(edenMatcher.group(2));
+                        data.edenAfterRegions = Integer.parseInt(edenMatcher.group(3));
+                    }
+                    continue;
+                }
+                
+                // 提取Survivor regions信息
+                Matcher survivorMatcher = survivorRegionsPattern.matcher(line);
+                if (survivorMatcher.find()) {
+                    String gcId = survivorMatcher.group(1);
+                    GCEventData data = gcEventMap.get(gcId);
+                    if (data != null) {
+                        data.survivorBeforeRegions = Integer.parseInt(survivorMatcher.group(2));
+                        data.survivorAfterRegions = Integer.parseInt(survivorMatcher.group(3));
+                    }
+                    continue;
+                }
+                
+                // 提取Old regions信息
+                Matcher oldMatcher = oldRegionsPattern.matcher(line);
+                if (oldMatcher.find()) {
+                    String gcId = oldMatcher.group(1);
+                    GCEventData data = gcEventMap.get(gcId);
+                    if (data != null) {
+                        data.oldBeforeRegions = Integer.parseInt(oldMatcher.group(2));
+                        data.oldAfterRegions = Integer.parseInt(oldMatcher.group(3));
+                    }
+                    continue;
+                }
+                
+                // 提取Humongous regions信息
+                Matcher humongousMatcher = humongousRegionsPattern.matcher(line);
+                if (humongousMatcher.find()) {
+                    String gcId = humongousMatcher.group(1);
+                    GCEventData data = gcEventMap.get(gcId);
+                    if (data != null) {
+                        data.humongousBeforeRegions = Integer.parseInt(humongousMatcher.group(2));
+                        data.humongousAfterRegions = Integer.parseInt(humongousMatcher.group(3));
+                    }
+                    continue;
+                }
+                
+                // 提取Metaspace信息
+                Matcher metaspaceMatcher = metaspacePattern.matcher(line);
+                if (metaspaceMatcher.find()) {
+                    String gcId = metaspaceMatcher.group(1);
+                    GCEventData data = gcEventMap.get(gcId);
+                    if (data != null) {
+                        long metaBefore = Long.parseLong(metaspaceMatcher.group(2)) * 1024;
+                        long metaCommittedBefore = Long.parseLong(metaspaceMatcher.group(3)) * 1024;
+                        long metaAfter = Long.parseLong(metaspaceMatcher.group(4)) * 1024;
+                        long metaCommittedAfter = Long.parseLong(metaspaceMatcher.group(5)) * 1024;
+                        
+                        data.metaspace = GCEvent.MemoryChange.builder()
+                            .before(metaBefore)
+                            .after(metaAfter)
+                            .total(Math.max(metaCommittedBefore, metaCommittedAfter))
+                            .build();
+                    }
+                    continue;
+                }
+            } catch (Exception e) {
+                log.error("解析G1详细内存信息失败: {}", e.getMessage());
+            }
+        }
+        
+        // 第三遍：构建完整的GC事件
+        for (GCEventData data : gcEventMap.values()) {
+            try {
+                GCEvent.MemoryChange youngGen = null;
+                GCEvent.MemoryChange oldGen = null;
+                
+                // 计算Young Gen内存变化
+                if (data.youngBeforeSize != null || (data.edenBeforeRegions != null && data.survivorBeforeRegions != null)) {
+                    long youngBefore = data.youngBeforeSize != null ? data.youngBeforeSize : 0;
+                    
+                    // 计算After大小：使用eden after + survivor after
+                    long youngAfter = 0;
+                    if (data.edenAfterRegions != null && data.survivorAfterRegions != null) {
+                        youngAfter = (data.edenAfterRegions + data.survivorAfterRegions) * regionSize;
+                    }
+                    
+                    // Young Gen的总容量难以精确获得，使用before作为参考
+                    long youngTotal = Math.max(youngBefore, youngAfter);
+                    if (youngTotal > 0) {
+                        youngGen = GCEvent.MemoryChange.builder()
+                            .before(youngBefore)
+                            .after(youngAfter)
+                            .total(youngTotal)
+                            .build();
+                    }
+                }
+                
+                // 计算Old Gen内存变化（通过总堆减去Young和Humongous）
+                if (data.oldBeforeRegions != null && data.oldAfterRegions != null && data.heapMemory != null) {
+                    long oldBefore = data.oldBeforeRegions * regionSize;
+                    long oldAfter = data.oldAfterRegions * regionSize;
+                    
+                    // 添加Humongous对象（大对象也算作老年代的一部分）
+                    if (data.humongousBeforeRegions != null) {
+                        oldBefore += data.humongousBeforeRegions * regionSize;
+                    }
+                    if (data.humongousAfterRegions != null) {
+                        oldAfter += data.humongousAfterRegions * regionSize;
+                    }
+                    
+                    // 计算Old Gen的总容量
+                    long heapTotal = data.heapMemory.getTotal();
+                    long youngTotal = youngGen != null ? youngGen.getTotal() : 0;
+                    long oldTotal = heapTotal - youngTotal;
+                    
+                    if (oldTotal > 0) {
+                        oldGen = GCEvent.MemoryChange.builder()
+                            .before(oldBefore)
+                            .after(oldAfter)
+                            .total(oldTotal)
+                            .build();
+                    }
+                }
+                
+                GCEvent event = GCEvent.builder()
+                        .timestamp(data.timestamp)
+                        .eventType(data.gcType)
+                        .gcCause(data.gcCause)
+                        .pauseTime(data.pauseTime)
+                        .concurrentTime(0.0)
+                        .heapMemory(data.heapMemory)
+                        .youngGen(youngGen)
+                        .oldGen(oldGen)
+                        .metaspace(data.metaspace)
+                        .isFullGC(data.isFullGC)
+                        .isLongPause(data.pauseTime > 100)
+                        .build();
+                
+                events.add(event);
+                data.event = event;
+            } catch (Exception e) {
+                log.error("构建GC事件失败: {}", e.getMessage());
+            }
+        }
+        
+        // 按时间戳排序
+        events.sort(Comparator.comparingLong(GCEvent::getTimestamp));
+        
+        log.info("解析到 {} 个G1 GC事件（Unified Logging格式）", events.size());
         return events;
     }
     
@@ -360,11 +555,30 @@ public class G1LogParser extends AbstractGCLogParser {
      * 用于临时存储GC事件数据
      */
     private static class GCEventData {
+        String gcId;
+        long timestamp;
+        String gcType;
+        String gcCause;
+        double pauseTime;
+        boolean isFullGC;
+        GCEvent.MemoryChange heapMemory;
+        GCEvent.MemoryChange metaspace;
         GCEvent event;
-        Integer edenBefore;
-        Integer edenAfter;
-        Integer survivorBefore;
-        Integer survivorAfter;
+        
+        // Region信息
+        Integer edenBeforeRegions;
+        Integer edenAfterRegions;
+        Integer survivorBeforeRegions;
+        Integer survivorAfterRegions;
+        Integer oldBeforeRegions;
+        Integer oldAfterRegions;
+        Integer humongousBeforeRegions;
+        Integer humongousAfterRegions;
+        Integer youngBeforeRegions;
+        
+        // 内存大小
+        Long youngBeforeSize;
+        Long survivorBeforeSize;
     }
 }
 
