@@ -126,5 +126,144 @@ public abstract class AbstractGCLogParser {
             return eventType.replaceAll("\\(.*?\\)", "").trim();
         }
     }
+    
+    /**
+     * 解析JVM启动参数
+     * 支持ZGC日志格式: jvm_args: -XX:+UseZGC -Xmx4g ...
+     * 也支持传统GC日志格式中的CommandLine flags
+     */
+    protected JVMArguments parseJVMArguments(List<String> lines) {
+        List<String> allArgs = new ArrayList<>();
+        List<String> gcArgs = new ArrayList<>();
+        List<String> memoryArgs = new ArrayList<>();
+        List<String> performanceArgs = new ArrayList<>();
+        List<String> otherArgs = new ArrayList<>();
+        
+        // 查找JVM参数行
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            
+            // ZGC日志格式: [timestamp][info][arguments] jvm_args: ...
+            if (line.contains("[arguments]") && line.contains("jvm_args:")) {
+                String argsString = line.substring(line.indexOf("jvm_args:") + 9).trim();
+                // 处理参数，需要考虑带等号的参数（如 -Dkey=value）
+                parseArgumentsString(argsString, allArgs, gcArgs, memoryArgs, performanceArgs, otherArgs);
+                break;
+            }
+            // 传统格式: CommandLine flags: ...
+            else if (line.contains("CommandLine flags:")) {
+                String argsString = line.substring(line.indexOf("CommandLine flags:") + 18).trim();
+                parseArgumentsString(argsString, allArgs, gcArgs, memoryArgs, performanceArgs, otherArgs);
+                break;
+            }
+            // VM Arguments格式（可能跨多行）
+            else if (line.contains("VM Arguments:") || line.contains("[arguments]") && line.contains("VM Arguments:")) {
+                // 检查下一行是否有jvm_args
+                if (i + 1 < lines.size() && lines.get(i + 1).contains("jvm_args:")) {
+                    String argsString = lines.get(i + 1).substring(lines.get(i + 1).indexOf("jvm_args:") + 9).trim();
+                    parseArgumentsString(argsString, allArgs, gcArgs, memoryArgs, performanceArgs, otherArgs);
+                    break;
+                } else {
+                    // 单行VM Arguments格式
+                    String argsString = line.substring(line.indexOf("VM Arguments:") + 13).trim();
+                    parseArgumentsString(argsString, allArgs, gcArgs, memoryArgs, performanceArgs, otherArgs);
+                    break;
+                }
+            }
+        }
+        
+        return JVMArguments.builder()
+                .allArguments(allArgs)
+                .gcArguments(gcArgs)
+                .memoryArguments(memoryArgs)
+                .performanceArguments(performanceArgs)
+                .otherArguments(otherArgs)
+                .build();
+    }
+    
+    /**
+     * 解析参数字符串，正确处理带等号的参数
+     */
+    private void parseArgumentsString(String argsString, List<String> allArgs, 
+                                     List<String> gcArgs, List<String> memoryArgs,
+                                     List<String> performanceArgs, List<String> otherArgs) {
+        if (argsString == null || argsString.trim().isEmpty()) {
+            return;
+        }
+        
+        // 使用正则表达式分割参数
+        // 匹配：以-或--开头的参数，后面可能跟值（可能包含空格和等号）
+        // 例如: -XX:+UseZGC, -Dkey=value, --add-opens=java.base/java.lang=ALL-UNNAMED
+        Pattern argPattern = Pattern.compile("(-{1,2}[^\\s=]+(?:=[^\\s]+)?)");
+        Matcher matcher = argPattern.matcher(argsString);
+        
+        while (matcher.find()) {
+            String arg = matcher.group(1).trim();
+            if (!arg.isEmpty()) {
+                allArgs.add(arg);
+                categorizeArgument(arg, gcArgs, memoryArgs, performanceArgs, otherArgs);
+            }
+        }
+        
+        // 如果没有匹配到任何参数，尝试简单的空格分割（向后兼容）
+        if (allArgs.isEmpty()) {
+            String[] parts = argsString.split("\\s+");
+            for (String part : parts) {
+                part = part.trim();
+                if (!part.isEmpty() && (part.startsWith("-") || part.startsWith("--"))) {
+                    allArgs.add(part);
+                    categorizeArgument(part, gcArgs, memoryArgs, performanceArgs, otherArgs);
+                }
+            }
+        }
+    }
+    
+    /**
+     * 分类JVM参数
+     */
+    private void categorizeArgument(String arg, List<String> gcArgs, 
+                                    List<String> memoryArgs, 
+                                    List<String> performanceArgs,
+                                    List<String> otherArgs) {
+        String lowerArg = arg.toLowerCase();
+        
+        // GC相关参数
+        if (lowerArg.contains("gc") || 
+            lowerArg.contains("zgc") || 
+            lowerArg.contains("g1") ||
+            lowerArg.contains("cms") ||
+            lowerArg.contains("parallel") ||
+            lowerArg.contains("serial") ||
+            lowerArg.contains("survivor") ||
+            lowerArg.contains("tenuring") ||
+            lowerArg.contains("xlog:gc")) {
+            gcArgs.add(arg);
+        }
+        // 内存相关参数
+        else if (lowerArg.startsWith("-xms") || 
+                 lowerArg.startsWith("-xmx") ||
+                 lowerArg.startsWith("-xmn") ||
+                 lowerArg.startsWith("-xx:metaspace") ||
+                 lowerArg.startsWith("-xx:maxmetaspace") ||
+                 lowerArg.startsWith("-xx:newsize") ||
+                 lowerArg.startsWith("-xx:maxnewsize") ||
+                 lowerArg.contains("heap") ||
+                 lowerArg.contains("stack")) {
+            memoryArgs.add(arg);
+        }
+        // 性能相关参数
+        else if (lowerArg.contains("compiler") ||
+                 lowerArg.contains("inline") ||
+                 lowerArg.contains("jit") ||
+                 lowerArg.contains("optimize") ||
+                 lowerArg.contains("thread") ||
+                 lowerArg.contains("performance")) {
+            performanceArgs.add(arg);
+        }
+        // 其他参数
+        else {
+            otherArgs.add(arg);
+        }
+    }
 }
 

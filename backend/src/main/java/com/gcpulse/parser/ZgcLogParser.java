@@ -1,6 +1,8 @@
 package com.gcpulse.parser;
 
 import com.gcpulse.model.GCEvent;
+import com.gcpulse.model.ZGCInitConfig;
+import com.gcpulse.model.ZGCStatistics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -22,45 +24,269 @@ import java.util.regex.Pattern;
 @Component
 public class ZgcLogParser extends AbstractGCLogParser {
     
-    // ZGC GC开始标记（同时支持分代和非分代）
-    private static final Pattern ZGC_START_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\d+\\]\\[gc,start\\s*\\]\\s*GC\\((\\d+)\\)\\s*(.+?)\\s*$");
+    // ZGC GC开始标记（同时支持分代和非分代）- 兼容JDK11+和JDK17+
+    private static final Pattern ZGC_START_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,start\\s*\\]\\s*GC\\((\\d+)\\)\\s*(.+?)\\s*$");
     
     // 分代模式检测
     private static final Pattern ZGC_GENERATIONAL_PATTERN = Pattern.compile("GC Workers for (Young|Old) Generation");
     
-    // ZGC Pause阶段
-    private static final Pattern ZGC_PAUSE_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\d+\\]\\[gc,phases\\s*\\]\\s*GC\\((\\d+)\\)\\s*(Pause .+?)\\s+([\\d.]+)ms");
+    // ZGC Pause阶段 - 兼容JDK17+
+    private static final Pattern ZGC_PAUSE_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,phases\\s*\\]\\s*GC\\((\\d+)\\)\\s*(Pause .+?)\\s+([\\d.]+)ms");
     
-    // ZGC Concurrent阶段
-    private static final Pattern ZGC_CONCURRENT_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\d+\\]\\[gc,phases\\s*\\]\\s*GC\\((\\d+)\\)\\s*(Concurrent .+?)\\s+([\\d.]+)ms");
+    // ZGC Concurrent阶段 - 兼容JDK17+
+    private static final Pattern ZGC_CONCURRENT_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,phases\\s*\\]\\s*GC\\((\\d+)\\)\\s*(Concurrent .+?)\\s+([\\d.]+)ms");
     
-    // ZGC堆内存统计表格 - Used行
-    private static final Pattern ZGC_HEAP_USED_PATTERN = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Used:\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
+    // ZGC堆内存统计表格 - Used行 - 兼容JDK17+（支持多个空格分隔）
+    private static final Pattern ZGC_HEAP_USED_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Used:\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
     
-    // ZGC堆内存统计表格 - Live行
-    private static final Pattern ZGC_HEAP_LIVE_PATTERN = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Live:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
+    // ZGC堆内存统计表格 - Live行 - 兼容JDK17+
+    private static final Pattern ZGC_HEAP_LIVE_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Live:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
     
-    // ZGC堆内存统计表格 - Allocated行
-    private static final Pattern ZGC_HEAP_ALLOCATED_PATTERN = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Allocated:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
+    // ZGC堆内存统计表格 - Allocated行 - 兼容JDK17+
+    private static final Pattern ZGC_HEAP_ALLOCATED_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Allocated:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
     
-    // ZGC堆内存统计表格 - Garbage行
-    private static final Pattern ZGC_HEAP_GARBAGE_PATTERN = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Garbage:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
+    // ZGC堆内存统计表格 - Garbage行 - 兼容JDK17+
+    private static final Pattern ZGC_HEAP_GARBAGE_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Garbage:\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
     
-    // ZGC堆内存统计表格 - Reclaimed行
-    private static final Pattern ZGC_HEAP_RECLAIMED_PATTERN = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Reclaimed:\\s+-\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
+    // ZGC堆内存统计表格 - Reclaimed行 - 兼容JDK17+
+    private static final Pattern ZGC_HEAP_RECLAIMED_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Reclaimed:\\s+-\\s+-\\s+(\\d+)M\\s+\\(\\d+%\\)\\s+(\\d+)M\\s+\\(\\d+%\\)");
     
-    // ZGC堆内存统计表格 - Capacity行
-    private static final Pattern ZGC_HEAP_CAPACITY_PATTERN = Pattern.compile("\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Capacity:\\s+(\\d+)M");
+    // ZGC堆内存统计表格 - Capacity行 - 兼容JDK17+
+    private static final Pattern ZGC_HEAP_CAPACITY_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,heap\\s*\\]\\s*GC\\((\\d+)\\)\\s+Capacity:\\s+(\\d+)M");
     
-    // ZGC GC汇总行
-    private static final Pattern ZGC_SUMMARY_PATTERN = Pattern.compile("\\[gc\\s*\\]\\s*GC\\((\\d+)\\)\\s*.*?\\s+(\\d+)M\\s*\\((\\d+)%\\)->(\\d+)M\\s*\\((\\d+)%\\)");
+    // ZGC GC汇总行 - 兼容JDK17+
+    private static final Pattern ZGC_SUMMARY_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc\\s*\\]\\s*GC\\((\\d+)\\)\\s*.*?\\s+(\\d+)M\\s*\\((\\d+)%\\)\\s*->\\s*(\\d+)M\\s*\\((\\d+)%\\)");
     
-    // ZGC Metaspace
-    private static final Pattern ZGC_METASPACE_PATTERN = Pattern.compile("\\[gc,metaspace\\]\\s*GC\\((\\d+)\\)\\s*Metaspace:\\s+(\\d+)M\\s+used,\\s+(\\d+)M\\s+committed,\\s+(\\d+)M\\s+reserved");
+    // ZGC Metaspace - 兼容JDK17+
+    private static final Pattern ZGC_METASPACE_PATTERN = Pattern.compile("\\[(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}[+-]\\d{4})\\]\\[\\w+\\s*\\]\\[gc,metaspace\\]\\s*GC\\((\\d+)\\)\\s*Metaspace:\\s+(\\d+)M\\s+used,\\s+(\\d+)M\\s+committed,\\s+(\\d+)M\\s+reserved");
     
     @Override
     public String getGCType() {
         return "ZGC";
+    }
+    
+    /**
+     * 解析ZGC初始化配置
+     */
+    public ZGCInitConfig parseZGCInitConfig(List<String> lines) {
+        ZGCInitConfig.ZGCInitConfigBuilder builder = ZGCInitConfig.builder();
+        
+        for (String line : lines) {
+            try {
+                if (line.contains("[gc,init] Version:")) {
+                    String version = line.substring(line.indexOf("Version:") + 8).trim();
+                    builder.version(version);
+                } else if (line.contains("[gc,init] Using legacy single-generation mode")) {
+                    builder.mode("Single-Generation");
+                } else if (line.contains("[gc,init] Using") && line.contains("generation mode")) {
+                    if (line.contains("generational")) {
+                        builder.mode("Generational");
+                    }
+                } else if (line.contains("[gc,init] NUMA Support:")) {
+                    String value = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.numaSupport(!value.equalsIgnoreCase("Disabled"));
+                } else if (line.contains("[gc,init] CPUs:")) {
+                    String cpuInfo = line.substring(line.indexOf("CPUs:") + 5).trim();
+                    String[] parts = cpuInfo.split(",");
+                    if (parts.length >= 2) {
+                        builder.cpuTotal(Integer.parseInt(parts[0].replaceAll("\\D+", "")));
+                        builder.cpuAvailable(Integer.parseInt(parts[1].replaceAll("\\D+", "")));
+                    }
+                } else if (line.contains("[gc,init] Memory:")) {
+                    String memory = line.substring(line.indexOf("Memory:") + 7).trim();
+                    builder.totalMemory(memory);
+                } else if (line.contains("[gc,init] Large Page Support:")) {
+                    String value = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.largePageSupport(!value.equalsIgnoreCase("Disabled"));
+                } else if (line.contains("[gc,init] GC Workers:")) {
+                    String workerInfo = line.substring(line.indexOf("GC Workers:") + 11).trim();
+                    String[] parts = workerInfo.split("\\s+");
+                    if (parts.length > 0) {
+                        builder.gcWorkers(Integer.parseInt(parts[0]));
+                        if (workerInfo.contains("dynamic")) {
+                            builder.gcWorkersMode("dynamic");
+                        } else {
+                            builder.gcWorkersMode("static");
+                        }
+                    }
+                } else if (line.contains("[gc,init] Address Space Type:")) {
+                    String type = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.addressSpaceType(type);
+                } else if (line.contains("[gc,init] Address Space Size:")) {
+                    String size = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.addressSpaceSize(size);
+                } else if (line.contains("[gc,init] Min Capacity:")) {
+                    String capacity = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.minCapacity(capacity);
+                } else if (line.contains("[gc,init] Initial Capacity:")) {
+                    String capacity = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.initialCapacity(capacity);
+                } else if (line.contains("[gc,init] Max Capacity:")) {
+                    String capacity = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.maxCapacity(capacity);
+                } else if (line.contains("[gc,init] Medium Page Size:")) {
+                    String size = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.mediumPageSize(size);
+                } else if (line.contains("[gc,init] Pre-touch:")) {
+                    String value = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.preTouch(!value.equalsIgnoreCase("Disabled"));
+                } else if (line.contains("[gc,init] Uncommit:")) {
+                    String value = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.uncommit(!value.equalsIgnoreCase("Disabled"));
+                } else if (line.contains("[gc,init] Uncommit Delay:")) {
+                    String delay = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.uncommitDelay(delay);
+                } else if (line.contains("[gc,init] Runtime Workers:")) {
+                    String workers = line.substring(line.lastIndexOf(":") + 1).trim();
+                    builder.runtimeWorkers(Integer.parseInt(workers.replaceAll("\\D+", "")));
+                }
+            } catch (Exception e) {
+                log.debug("解析ZGC初始化配置行失败: {}", line);
+            }
+        }
+        
+        return builder.build();
+    }
+    
+    /**
+     * 解析ZGC统计信息（从GC事件中提取）
+     */
+    public ZGCStatistics parseZGCStatistics(List<String> lines) {
+        ZGCStatistics.ZGCStatisticsBuilder builder = ZGCStatistics.builder();
+        Map<String, Double> mmuMap = new HashMap<>();
+        
+        for (String line : lines) {
+            try {
+                // MMU统计
+                if (line.contains("[gc,mmu") && line.contains("MMU:")) {
+                    String mmuInfo = line.substring(line.indexOf("MMU:") + 4).trim();
+                    String[] parts = mmuInfo.split(",\\s*");
+                    for (String part : parts) {
+                        if (part.contains("/")) {
+                            String[] kv = part.split("/");
+                            if (kv.length == 2) {
+                                String timeWindow = kv[0].trim();
+                                String percentage = kv[1].replaceAll("[^\\d.]", "");
+                                mmuMap.put(timeWindow, Double.parseDouble(percentage));
+                            }
+                        }
+                    }
+                }
+                // Load信息
+                else if (line.contains("[gc,load") && line.contains("Load:")) {
+                    String load = line.substring(line.indexOf("Load:") + 5).trim();
+                    builder.systemLoad(load);
+                }
+                // Marking统计
+                else if (line.contains("[gc,marking") && line.contains("Mark:")) {
+                    String markInfo = line.substring(line.indexOf("Mark:") + 5).trim();
+                    Pattern stripePattern = Pattern.compile("(\\d+)\\s+stripe\\(s\\)");
+                    Matcher matcher = stripePattern.matcher(markInfo);
+                    if (matcher.find()) {
+                        builder.markStripes(Integer.parseInt(matcher.group(1)));
+                    }
+                    
+                    Pattern flushPattern = Pattern.compile("(\\d+)\\s+proactive flush\\(es\\)");
+                    matcher = flushPattern.matcher(markInfo);
+                    if (matcher.find()) {
+                        builder.proactiveFlushes(Integer.parseInt(matcher.group(1)));
+                    }
+                    
+                    Pattern terminatePattern = Pattern.compile("(\\d+)\\s+terminate flush\\(es\\)");
+                    matcher = terminatePattern.matcher(markInfo);
+                    if (matcher.find()) {
+                        builder.terminateFlushes(Integer.parseInt(matcher.group(1)));
+                    }
+                }
+                // Mark Stack Usage
+                else if (line.contains("[gc,marking") && line.contains("Mark Stack Usage:")) {
+                    String usage = line.substring(line.indexOf("Mark Stack Usage:") + 17).trim();
+                    builder.markStackUsage(usage);
+                }
+                // NMethod统计
+                else if (line.contains("[gc,nmethod") && line.contains("NMethods:")) {
+                    String nmethodInfo = line.substring(line.indexOf("NMethods:") + 9).trim();
+                    Pattern registeredPattern = Pattern.compile("(\\d+)\\s+registered");
+                    Matcher matcher = registeredPattern.matcher(nmethodInfo);
+                    if (matcher.find()) {
+                        builder.nmethodsRegistered(Integer.parseInt(matcher.group(1)));
+                    }
+                    
+                    Pattern unregisteredPattern = Pattern.compile("(\\d+)\\s+unregistered");
+                    matcher = unregisteredPattern.matcher(nmethodInfo);
+                    if (matcher.find()) {
+                        builder.nmethodsUnregistered(Integer.parseInt(matcher.group(1)));
+                    }
+                }
+                // 引用统计
+                else if (line.contains("[gc,ref") && line.contains("Soft:")) {
+                    builder.softReferences(parseReferenceStats(line));
+                } else if (line.contains("[gc,ref") && line.contains("Weak:")) {
+                    builder.weakReferences(parseReferenceStats(line));
+                } else if (line.contains("[gc,ref") && line.contains("Final:")) {
+                    builder.finalReferences(parseReferenceStats(line));
+                } else if (line.contains("[gc,ref") && line.contains("Phantom:")) {
+                    builder.phantomReferences(parseReferenceStats(line));
+                }
+                // 页面统计
+                else if (line.contains("[gc,reloc") && line.contains("Small Pages:")) {
+                    builder.smallPages(parsePageStats(line));
+                } else if (line.contains("[gc,reloc") && line.contains("Medium Pages:")) {
+                    builder.mediumPages(parsePageStats(line));
+                } else if (line.contains("[gc,reloc") && line.contains("Large Pages:")) {
+                    builder.largePages(parsePageStats(line));
+                }
+                // Forwarding Usage
+                else if (line.contains("[gc,reloc") && line.contains("Forwarding Usage:")) {
+                    String usage = line.substring(line.indexOf("Forwarding Usage:") + 16).trim();
+                    builder.forwardingUsage(usage);
+                }
+            } catch (Exception e) {
+                log.debug("解析ZGC统计信息行失败: {}", line);
+            }
+        }
+        
+        builder.mmuPercentages(mmuMap);
+        return builder.build();
+    }
+    
+    /**
+     * 解析引用统计
+     */
+    private ZGCStatistics.ReferenceStats parseReferenceStats(String line) {
+        Pattern pattern = Pattern.compile("(\\d+)\\s+encountered,\\s+(\\d+)\\s+discovered,\\s+(\\d+)\\s+enqueued");
+        Matcher matcher = pattern.matcher(line);
+        if (matcher.find()) {
+            return ZGCStatistics.ReferenceStats.builder()
+                    .encountered(Integer.parseInt(matcher.group(1)))
+                    .discovered(Integer.parseInt(matcher.group(2)))
+                    .enqueued(Integer.parseInt(matcher.group(3)))
+                    .build();
+        }
+        return null;
+    }
+    
+    /**
+     * 解析页面统计
+     */
+    private ZGCStatistics.PageStats parsePageStats(String line) {
+        try {
+            // 格式: Small Pages: 54 / 108M, Empty: 0M, Relocated: 15M, In-Place: 0
+            Pattern pattern = Pattern.compile("(\\d+)\\s+/\\s+([\\d.]+M),\\s+Empty:\\s+([\\d.]+M),\\s+Relocated:\\s+([\\d.]+M),\\s+In-Place:\\s+(\\d+)");
+            Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) {
+                return ZGCStatistics.PageStats.builder()
+                        .count(Integer.parseInt(matcher.group(1)))
+                        .size(matcher.group(2))
+                        .emptySize(matcher.group(3))
+                        .relocatedSize(matcher.group(4))
+                        .inPlace(Integer.parseInt(matcher.group(5)))
+                        .build();
+            }
+        } catch (Exception e) {
+            log.debug("解析页面统计失败: {}", line);
+        }
+        return null;
     }
     
     @Override
@@ -135,15 +361,15 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Used: Mark Start / Mark End / Relocate Start / Relocate End / High / Low
                 Matcher usedMatcher = ZGC_HEAP_USED_PATTERN.matcher(line);
                 if (usedMatcher.find()) {
-                    int gcId = Integer.parseInt(usedMatcher.group(1));
+                    int gcId = Integer.parseInt(usedMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        data.usedMarkStart = Long.parseLong(usedMatcher.group(2)) * 1024 * 1024;
-                        data.usedMarkEnd = Long.parseLong(usedMatcher.group(3)) * 1024 * 1024;
-                        data.usedRelocateStart = Long.parseLong(usedMatcher.group(4)) * 1024 * 1024;
-                        data.usedRelocateEnd = Long.parseLong(usedMatcher.group(5)) * 1024 * 1024;
-                        data.usedHigh = Long.parseLong(usedMatcher.group(6)) * 1024 * 1024;
-                        data.usedLow = Long.parseLong(usedMatcher.group(7)) * 1024 * 1024;
+                        data.usedMarkStart = Long.parseLong(usedMatcher.group(3)) * 1024 * 1024;
+                        data.usedMarkEnd = Long.parseLong(usedMatcher.group(4)) * 1024 * 1024;
+                        data.usedRelocateStart = Long.parseLong(usedMatcher.group(5)) * 1024 * 1024;
+                        data.usedRelocateEnd = Long.parseLong(usedMatcher.group(6)) * 1024 * 1024;
+                        data.usedHigh = Long.parseLong(usedMatcher.group(7)) * 1024 * 1024;
+                        data.usedLow = Long.parseLong(usedMatcher.group(8)) * 1024 * 1024;
                     }
                     continue;
                 }
@@ -151,12 +377,12 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Live: - / Mark End / Relocate Start / Relocate End
                 Matcher liveMatcher = ZGC_HEAP_LIVE_PATTERN.matcher(line);
                 if (liveMatcher.find()) {
-                    int gcId = Integer.parseInt(liveMatcher.group(1));
+                    int gcId = Integer.parseInt(liveMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        data.liveMarkEnd = Long.parseLong(liveMatcher.group(2)) * 1024 * 1024;
-                        data.liveRelocateStart = Long.parseLong(liveMatcher.group(3)) * 1024 * 1024;
-                        data.liveRelocateEnd = Long.parseLong(liveMatcher.group(4)) * 1024 * 1024;
+                        data.liveMarkEnd = Long.parseLong(liveMatcher.group(3)) * 1024 * 1024;
+                        data.liveRelocateStart = Long.parseLong(liveMatcher.group(4)) * 1024 * 1024;
+                        data.liveRelocateEnd = Long.parseLong(liveMatcher.group(5)) * 1024 * 1024;
                     }
                     continue;
                 }
@@ -164,12 +390,12 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Allocated: - / Mark End / Relocate Start / Relocate End
                 Matcher allocatedMatcher = ZGC_HEAP_ALLOCATED_PATTERN.matcher(line);
                 if (allocatedMatcher.find()) {
-                    int gcId = Integer.parseInt(allocatedMatcher.group(1));
+                    int gcId = Integer.parseInt(allocatedMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        data.allocatedMarkEnd = Long.parseLong(allocatedMatcher.group(2)) * 1024 * 1024;
-                        data.allocatedRelocateStart = Long.parseLong(allocatedMatcher.group(3)) * 1024 * 1024;
-                        data.allocatedRelocateEnd = Long.parseLong(allocatedMatcher.group(4)) * 1024 * 1024;
+                        data.allocatedMarkEnd = Long.parseLong(allocatedMatcher.group(3)) * 1024 * 1024;
+                        data.allocatedRelocateStart = Long.parseLong(allocatedMatcher.group(4)) * 1024 * 1024;
+                        data.allocatedRelocateEnd = Long.parseLong(allocatedMatcher.group(5)) * 1024 * 1024;
                     }
                     continue;
                 }
@@ -177,12 +403,12 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Garbage: - / Mark End / Relocate Start / Relocate End
                 Matcher garbageMatcher = ZGC_HEAP_GARBAGE_PATTERN.matcher(line);
                 if (garbageMatcher.find()) {
-                    int gcId = Integer.parseInt(garbageMatcher.group(1));
+                    int gcId = Integer.parseInt(garbageMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        data.garbageMarkEnd = Long.parseLong(garbageMatcher.group(2)) * 1024 * 1024;
-                        data.garbageRelocateStart = Long.parseLong(garbageMatcher.group(3)) * 1024 * 1024;
-                        data.garbageRelocateEnd = Long.parseLong(garbageMatcher.group(4)) * 1024 * 1024;
+                        data.garbageMarkEnd = Long.parseLong(garbageMatcher.group(3)) * 1024 * 1024;
+                        data.garbageRelocateStart = Long.parseLong(garbageMatcher.group(4)) * 1024 * 1024;
+                        data.garbageRelocateEnd = Long.parseLong(garbageMatcher.group(5)) * 1024 * 1024;
                     }
                     continue;
                 }
@@ -190,11 +416,11 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Reclaimed: - / - / Relocate Start / Relocate End
                 Matcher reclaimedMatcher = ZGC_HEAP_RECLAIMED_PATTERN.matcher(line);
                 if (reclaimedMatcher.find()) {
-                    int gcId = Integer.parseInt(reclaimedMatcher.group(1));
+                    int gcId = Integer.parseInt(reclaimedMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        data.reclaimedRelocateStart = Long.parseLong(reclaimedMatcher.group(2)) * 1024 * 1024;
-                        data.reclaimedRelocateEnd = Long.parseLong(reclaimedMatcher.group(3)) * 1024 * 1024;
+                        data.reclaimedRelocateStart = Long.parseLong(reclaimedMatcher.group(3)) * 1024 * 1024;
+                        data.reclaimedRelocateEnd = Long.parseLong(reclaimedMatcher.group(4)) * 1024 * 1024;
                     }
                     continue;
                 }
@@ -202,10 +428,10 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Capacity
                 Matcher capacityMatcher = ZGC_HEAP_CAPACITY_PATTERN.matcher(line);
                 if (capacityMatcher.find()) {
-                    int gcId = Integer.parseInt(capacityMatcher.group(1));
+                    int gcId = Integer.parseInt(capacityMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        data.capacity = Long.parseLong(capacityMatcher.group(2)) * 1024 * 1024;
+                        data.capacity = Long.parseLong(capacityMatcher.group(3)) * 1024 * 1024;
                     }
                     continue;
                 }
@@ -213,11 +439,11 @@ public class ZgcLogParser extends AbstractGCLogParser {
                 // Metaspace
                 Matcher metaspaceMatcher = ZGC_METASPACE_PATTERN.matcher(line);
                 if (metaspaceMatcher.find()) {
-                    int gcId = Integer.parseInt(metaspaceMatcher.group(1));
+                    int gcId = Integer.parseInt(metaspaceMatcher.group(2)); // group(1)是时间戳，group(2)是gcId
                     ZGCEventData data = gcDataMap.get(gcId);
                     if (data != null) {
-                        long metaUsed = Long.parseLong(metaspaceMatcher.group(2)) * 1024 * 1024;
-                        long metaCommitted = Long.parseLong(metaspaceMatcher.group(3)) * 1024 * 1024;
+                        long metaUsed = Long.parseLong(metaspaceMatcher.group(3)) * 1024 * 1024;
+                        long metaCommitted = Long.parseLong(metaspaceMatcher.group(4)) * 1024 * 1024;
                         data.metaspace = GCEvent.MemoryChange.builder()
                             .before(metaUsed)
                             .after(metaUsed)

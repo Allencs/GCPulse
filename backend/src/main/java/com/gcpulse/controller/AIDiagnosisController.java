@@ -2,8 +2,11 @@ package com.gcpulse.controller;
 
 import com.gcpulse.model.AIDiagnosisRequest;
 import com.gcpulse.model.AIDiagnosisResponse;
+import com.gcpulse.model.GCPulseResult;
+import com.gcpulse.model.OptimizationContext;
 import com.gcpulse.service.AIDiagnosisService;
 import com.gcpulse.service.DiagnosisExportService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -31,8 +34,11 @@ public class AIDiagnosisController {
     @Autowired
     private DiagnosisExportService exportService;
     
+    @Autowired
+    private ObjectMapper objectMapper;
+    
     /**
-     * 执行AI诊断
+     * 执行AI诊断（基于原始日志）
      */
     @PostMapping("/diagnose")
     public AIDiagnosisResponse diagnose(
@@ -67,6 +73,7 @@ public class AIDiagnosisController {
                     .gcLogContent(gcLogContent)
                     .collectorType(collectorType)
                     .eventCount(eventCount)
+                    .useStructuredData(false) // 使用原始日志
                     .build();
             
             // 执行诊断
@@ -77,6 +84,60 @@ public class AIDiagnosisController {
             return AIDiagnosisResponse.builder()
                     .success(false)
                     .error("读取日志文件失败: " + e.getMessage())
+                    .processTime(0)
+                    .build();
+        }
+    }
+    
+    /**
+     * 智能优化建议（基于结构化分析结果） - 新增端点
+     */
+    @PostMapping("/optimize")
+    public AIDiagnosisResponse getOptimizationSuggestions(
+            @RequestParam(value = "apiUrl", required = false) String apiUrl,
+            @RequestParam(value = "apiKey", required = false) String apiKey,
+            @RequestParam(value = "model", required = false) String model,
+            @RequestBody String analysisResultJson) {
+        
+        try {
+            log.info("收到AI优化建议请求（结构化数据模式）");
+            
+            // 解析GCPulseResult
+            GCPulseResult analysisResult = objectMapper.readValue(analysisResultJson, GCPulseResult.class);
+            
+            // 构建优化上下文
+            OptimizationContext context = OptimizationContext.fromGCPulseResult(analysisResult);
+            
+            // 处理API配置
+            String finalApiUrl = (apiUrl != null && !apiUrl.trim().isEmpty()) ? apiUrl : null;
+            String finalApiKey = (apiKey != null && !apiKey.trim().isEmpty()) ? apiKey : null;
+            String finalModel = (model != null && !model.trim().isEmpty()) ? model : null;
+            
+            log.info("AI优化建议请求参数:");
+            log.info("  - apiUrl: {}", finalApiUrl != null ? finalApiUrl : "[使用后端配置]");
+            log.info("  - apiKey: {}", finalApiKey != null ? "***" : "[使用后端配置]");
+            log.info("  - model: {}", finalModel != null ? finalModel : "[使用后端配置]");
+            log.info("  - collectorType: {}", context.getCollectorType());
+            log.info("  - 使用结构化数据模式");
+            
+            // 构建请求
+            AIDiagnosisRequest request = AIDiagnosisRequest.builder()
+                    .apiUrl(finalApiUrl)
+                    .apiKey(finalApiKey)
+                    .model(finalModel)
+                    .collectorType(context.getCollectorType())
+                    .useStructuredData(true) // 使用结构化数据
+                    .optimizationContext(context)
+                    .build();
+            
+            // 执行诊断
+            return aiDiagnosisService.diagnose(request);
+            
+        } catch (Exception e) {
+            log.error("AI优化建议失败: {}", e.getMessage(), e);
+            return AIDiagnosisResponse.builder()
+                    .success(false)
+                    .error("优化建议生成失败: " + e.getMessage())
                     .processTime(0)
                     .build();
         }

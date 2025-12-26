@@ -2,12 +2,16 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 /**
  * GC 原因统计
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class GCCause {
     
     private String cause;           // GC 原因

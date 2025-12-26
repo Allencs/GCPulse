@@ -2,6 +2,8 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 import java.util.List;
 
 /**
@@ -9,6 +11,8 @@ import java.util.List;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class TimeSeriesData {
     
     // 堆内存使用趋势（GC 后）
@@ -46,6 +50,8 @@ public class TimeSeriesData {
     
     @Data
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class DataPoint {
         private long timestamp;           // 时间戳（ms）
         private double value;             // 值

@@ -50,5 +50,9 @@ public class GCPulseResult {
     private Map<String, GCCause> gcCauses;          // GC 原因统计
     private SafePointStats safePointStats;          // 安全点统计
     private StringDeduplicationStats stringDedup;   // 字符串去重统计
+    
+    // ZGC特定信息
+    private ZGCInitConfig zgcInitConfig;            // ZGC 初始化配置
+    private ZGCStatistics zgcStatistics;            // ZGC 统计信息
 }
 

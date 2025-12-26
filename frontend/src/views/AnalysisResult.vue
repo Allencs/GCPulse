@@ -138,7 +138,10 @@
         <PhaseStatisticsCard :phase-statistics="analysisData.phaseStatistics" />
         
         <!-- 诊断报告 -->
-        <DiagnosisPanel :diagnosis-report="analysisData.diagnosisReport" />
+        <DiagnosisPanel 
+          :diagnosis-report="analysisData.diagnosisReport" 
+          :analysis-result="analysisData"
+        />
       </div>
       
       <!-- AI诊断Tab内容 -->

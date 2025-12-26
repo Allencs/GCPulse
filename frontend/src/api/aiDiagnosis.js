@@ -17,7 +17,7 @@ export function getAIDiagnosisConfig() {
 }
 
 /**
- * 执行AI诊断
+ * 执行AI诊断（基于原始日志）
  */
 export function performAIDiagnosis(file, apiUrl, apiKey, model, collectorType, eventCount) {
   const formData = new FormData()
@@ -46,6 +46,38 @@ export function performAIDiagnosis(file, apiUrl, apiKey, model, collectorType, e
   })
 }
 
+/**
+ * 获取AI智能优化建议（基于结构化分析结果） - 新增
+ */
+export async function getAIOptimizationSuggestions(analysisResult, apiUrl, apiKey, model) {
+  try {
+    const params = {}
+    
+    // 只有当用户填写了才发送，否则使用后端配置
+    if (apiKey) {
+      params.apiKey = apiKey
+    }
+    if (apiUrl) {
+      params.apiUrl = apiUrl
+    }
+    if (model) {
+      params.model = model
+    }
+    
+    const response = await aiApi.post('/ai/optimize', JSON.stringify(analysisResult), {
+      params: params,
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 120000 // 120秒超时（结构化数据处理可能需要更多时间）
+    })
+    
+    return response.data
+  } catch (error) {
+    console.error('AI优化建议请求失败:', error)
+    throw error
+  }
+}
 
 /**
  * 导出诊断报告为HTML（使用渲染后的HTML）

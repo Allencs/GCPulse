@@ -2,12 +2,16 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 /**
  * 字符串去重统计
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class StringDeduplicationStats {
     
     private long totalInspected;         // 检查的字符串总数

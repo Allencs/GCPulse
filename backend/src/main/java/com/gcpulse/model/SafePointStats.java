@@ -2,6 +2,8 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 import java.util.List;
 
 /**
@@ -9,6 +11,8 @@ import java.util.List;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class SafePointStats {
     
     private long totalCount;          // 总次数
@@ -36,6 +40,8 @@ public class SafePointStats {
     
     @Data
     @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class SafePointEvent {
         private long timestamp;       // 时间戳
         private double duration;      // 持续时间 (ms)

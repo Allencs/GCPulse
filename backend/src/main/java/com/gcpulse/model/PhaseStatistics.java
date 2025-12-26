@@ -2,12 +2,16 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 /**
  * GC阶段统计信息
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class PhaseStatistics {
     
     private String phaseName;         // 阶段名称

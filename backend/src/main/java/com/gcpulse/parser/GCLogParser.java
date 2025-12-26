@@ -74,11 +74,21 @@ public class GCLogParser {
         TimeSeriesData timeSeriesData = generateTimeSeriesData(gcEvents);
         
         // 企业级功能
-        JVMArguments jvmArgs = parseJVMArguments(lines);
+        JVMArguments jvmArgs = selectedParser != null ? 
+                selectedParser.parseJVMArguments(lines) : parseJVMArguments(lines);
         TenuringSummary tenuringSummary = parseTenuringSummary(lines);
         Map<String, GCCause> gcCauses = calculateGCCauses(gcEvents);
         SafePointStats safePointStats = parseSafePointStats(lines);
         StringDeduplicationStats stringDedup = parseStringDeduplication(lines);
+        
+        // ZGC特定功能
+        ZGCInitConfig zgcInitConfig = null;
+        ZGCStatistics zgcStatistics = null;
+        if ("ZGC".equals(collectorType) && selectedParser instanceof ZgcLogParser) {
+            ZgcLogParser zgcParser = (ZgcLogParser) selectedParser;
+            zgcInitConfig = zgcParser.parseZGCInitConfig(lines);
+            zgcStatistics = zgcParser.parseZGCStatistics(lines);
+        }
         
         return GCPulseResult.builder()
                 .fileName(fileName)
@@ -99,6 +109,9 @@ public class GCLogParser {
                 .gcCauses(gcCauses)
                 .safePointStats(safePointStats)
                 .stringDedup(stringDedup)
+                // ZGC特定功能
+                .zgcInitConfig(zgcInitConfig)
+                .zgcStatistics(zgcStatistics)
                 .build();
     }
     

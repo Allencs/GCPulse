@@ -2,12 +2,16 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 /**
  * CPU统计信息
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class CPUStats {
     
     private Double cpuTime;           // CPU总时间（秒）

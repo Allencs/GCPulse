@@ -2,12 +2,16 @@ package com.gcpulse.model;
 
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 /**
  * 对象统计信息
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class ObjectStats {
     
     private long totalCreatedBytes;       // 总创建字节数
