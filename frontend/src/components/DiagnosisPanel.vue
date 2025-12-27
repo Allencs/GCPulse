@@ -5,90 +5,6 @@
       诊断报告与优化建议
     </div>
     
-    <!-- AI智能优化建议按钮 -->
-    <div class="ai-optimization-section">
-      <!-- 配置状态提示 -->
-      <el-alert
-        v-if="!backendConfig.hasApiKey"
-        title="需要配置AI服务"
-        type="warning"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 16px"
-      >
-        <template #default>
-          <p>请先在"<strong>AI智能诊断</strong>"标签页配置API Key，或在后端配置文件中设置</p>
-          <p style="margin-top: 5px; font-size: 12px; color: #E6A23C;">配置完成后即可使用AI智能优化建议功能</p>
-        </template>
-      </el-alert>
-      
-      <el-alert
-        v-else
-        title="AI配置已就绪"
-        type="success"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 16px"
-      >
-        <template #default>
-          <p>✅ 已使用后端配置 | 🤖 模型: {{ backendConfig.defaultModel || '默认' }}</p>
-          <p style="margin-top: 5px; font-size: 12px; color: #67C23A;">可直接点击下方按钮获取AI优化建议</p>
-        </template>
-      </el-alert>
-      
-      <el-button 
-        type="primary" 
-        :icon="MagicStick" 
-        @click="getAIOptimization"
-        :loading="aiLoading"
-        :disabled="!backendConfig.hasApiKey"
-        size="large"
-      >
-        <span v-if="!aiDiagnosis">{{ aiLoading ? '正在生成AI优化建议...' : '🤖 获取AI智能优化建议' }}</span>
-        <span v-else>🔄 重新生成AI建议</span>
-      </el-button>
-      <p class="ai-description">
-        基于GC分析结果，使用AI深度分析并提供专业的JVM调优建议
-      </p>
-    </div>
-    
-    <!-- AI优化建议结果 -->
-    <div v-if="aiDiagnosis" class="ai-diagnosis-result">
-      <div class="ai-result-header">
-        <h3>
-          <el-icon><MagicStick /></el-icon>
-          AI智能优化建议
-        </h3>
-        <el-button 
-          :icon="Download" 
-          @click="exportAIDiagnosis"
-          size="small"
-        >
-          导出报告
-        </el-button>
-      </div>
-      
-      <!-- AI诊断内容渲染 -->
-      <div class="markdown-content" v-html="renderedMarkdown"></div>
-      
-      <!-- 处理时间 -->
-      <div class="ai-meta">
-        <el-tag type="info" size="small">
-          处理时间: {{ aiProcessTime }}ms
-        </el-tag>
-      </div>
-    </div>
-    
-    <!-- AI诊断错误 -->
-    <el-alert
-      v-if="aiError"
-      :title="aiError"
-      type="error"
-      show-icon
-      closable
-      @close="aiError = null"
-    />
-    
     <el-divider />
     
     <!-- 内存泄漏检测 -->
@@ -185,13 +101,83 @@
           </div>
         </el-card>
       </div>
+      
+      <!-- AI智能优化建议 - 整合在优化建议模块内 -->
+      <div class="ai-optimization-wrapper">
+        <el-divider content-position="left">
+          <el-icon><MagicStick /></el-icon>
+          <span style="margin-left: 6px">AI智能优化建议</span>
+        </el-divider>
+        
+        <!-- AI按钮 - 精简版 -->
+        <div class="ai-button-wrapper">
+          <el-button 
+            type="primary" 
+            :icon="MagicStick" 
+            @click="getAIOptimization"
+            :loading="aiLoading"
+            :disabled="!backendConfig.hasApiKey"
+            plain
+          >
+            {{ aiLoading ? '正在生成...' : (aiDiagnosis ? '重新生成' : '获取AI优化建议') }}
+          </el-button>
+          <span class="ai-hint" v-if="!backendConfig.hasApiKey">
+            需先配置API Key
+          </span>
+        </div>
+        
+        <!-- AI诊断错误 -->
+        <el-alert
+          v-if="aiError"
+          :title="aiError"
+          type="error"
+          show-icon
+          closable
+          @close="aiError = null"
+          style="margin-top: 16px"
+        />
+        
+        <!-- AI优化建议结果 - 可折叠 -->
+        <el-collapse v-if="aiDiagnosis" v-model="activeCollapse" style="margin-top: 16px">
+          <el-collapse-item name="ai-result">
+            <template #title>
+              <div class="collapse-title">
+                <el-icon><Document /></el-icon>
+                <span>AI诊断报告</span>
+                <el-tag type="success" size="small" style="margin-left: 12px">
+                  已生成
+                </el-tag>
+                <el-button 
+                  :icon="Download" 
+                  @click.stop="exportAIDiagnosis"
+                  size="small"
+                  text
+                  style="margin-left: auto"
+                >
+                  导出
+                </el-button>
+              </div>
+            </template>
+            
+            <!-- AI诊断内容渲染 -->
+            <div class="markdown-content" v-html="renderedMarkdown"></div>
+            
+            <!-- 处理时间 -->
+            <div class="ai-meta">
+              <el-tag type="info" size="small">
+                处理时间: {{ aiProcessTime }}ms
+              </el-tag>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { Warning, Search, CircleClose, Clock, Tickets, MagicStick, Download } from '@element-plus/icons-vue'
+import { Warning, Search, CircleClose, Clock, Tickets, MagicStick, Download, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
@@ -213,6 +199,7 @@ const aiDiagnosis = ref(null)
 const aiLoading = ref(false)
 const aiError = ref(null)
 const aiProcessTime = ref(0)
+const activeCollapse = ref(['ai-result']) // 默认展开
 
 // 后端配置信息（与AI诊断模块共享）
 const backendConfig = ref({
@@ -221,6 +208,62 @@ const backendConfig = ref({
   hasDefaultModel: false,
   defaultModel: ''
 })
+
+// 生成缓存键
+const getCacheKey = () => {
+  if (!props.analysisResult) return null
+  // 使用文件名和GC事件数作为缓存键
+  const fileName = props.analysisResult.fileName || 'unknown'
+  const eventCount = props.analysisResult.gcEvents?.length || 0
+  const collectorType = props.analysisResult.collectorType || 'unknown'
+  return `ai_diagnosis_${fileName}_${collectorType}_${eventCount}`
+}
+
+// 从缓存加载
+const loadFromCache = () => {
+  const cacheKey = getCacheKey()
+  if (!cacheKey) return false
+  
+  try {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      const data = JSON.parse(cached)
+      // 检查缓存是否过期（24小时）
+      const cacheTime = data.timestamp || 0
+      const now = Date.now()
+      if (now - cacheTime < 24 * 60 * 60 * 1000) {
+        aiDiagnosis.value = data.diagnosis
+        aiProcessTime.value = data.processTime || 0
+        console.log('已从缓存加载AI诊断结果')
+        return true
+      } else {
+        // 缓存过期，删除
+        localStorage.removeItem(cacheKey)
+      }
+    }
+  } catch (err) {
+    console.error('加载缓存失败:', err)
+  }
+  return false
+}
+
+// 保存到缓存
+const saveToCache = (diagnosis, processTime) => {
+  const cacheKey = getCacheKey()
+  if (!cacheKey) return
+  
+  try {
+    const data = {
+      diagnosis,
+      processTime,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(cacheKey, JSON.stringify(data))
+    console.log('AI诊断结果已缓存')
+  } catch (err) {
+    console.error('保存缓存失败:', err)
+  }
+}
 
 // 配置Markdown解析器
 const md = new MarkdownIt({
@@ -249,6 +292,9 @@ onMounted(async () => {
     const response = await getAIDiagnosisConfig()
     backendConfig.value = response.data
     console.log('后端AI配置:', backendConfig.value)
+    
+    // 尝试从缓存加载
+    loadFromCache()
   } catch (err) {
     console.error('获取后端配置失败:', err)
   }
@@ -286,6 +332,13 @@ async function getAIOptimization() {
     if (response.success) {
       aiDiagnosis.value = response.diagnosis
       aiProcessTime.value = response.processTime
+      
+      // 保存到缓存
+      saveToCache(response.diagnosis, response.processTime)
+      
+      // 自动展开结果
+      activeCollapse.value = ['ai-result']
+      
       ElMessage.success('AI优化建议生成成功')
     } else {
       aiError.value = response.error || '生成失败'
@@ -329,154 +382,202 @@ function getTagType(level) {
 </script>
 
 <style lang="scss" scoped>
-.ai-optimization-section {
-  margin-bottom: 32px;
-  padding: 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  text-align: center;
+// AI优化建议包装器
+.ai-optimization-wrapper {
+  margin-top: 24px;
+  padding-top: 16px;
+}
+
+// AI按钮区域 - 精简样式
+.ai-button-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   
   .el-button {
-    font-size: 16px;
-    padding: 16px 32px;
-    border: none;
-    background: white;
-    color: #667eea;
-    font-weight: 600;
-    
-    &:hover {
-      background: #f5f7fa;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
+    min-width: 140px;
   }
   
-  .ai-description {
-    margin-top: 12px;
-    color: white;
-    font-size: 14px;
-    opacity: 0.9;
+  .ai-hint {
+    font-size: 13px;
+    color: #909399;
   }
 }
 
-.ai-diagnosis-result {
-  margin-bottom: 32px;
-  padding: 24px;
-  background: #f8f9fa;
-  border-radius: 12px;
-  border: 2px solid #667eea;
+// 折叠面板标题
+.collapse-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  width: 100%;
   
-  .ai-result-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
+  .el-icon {
+    color: #667eea;
+  }
+}
+
+// Markdown内容样式
+.markdown-content {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  line-height: 1.8;
+  margin-top: 12px;
+  
+  :deep(h1) {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-top: 0;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #667eea;
+  }
+  
+  :deep(h2) {
+    color: #303133;
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 24px;
+    margin-bottom: 14px;
+    padding-left: 10px;
+    border-left: 4px solid #667eea;
+  }
+  
+  :deep(h3) {
+    color: #606266;
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 12px;
     
-    h3 {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 18px;
-      font-weight: 600;
+    &::before {
+      content: '▸';
       color: #667eea;
-      margin: 0;
-      
-      .el-icon {
-        font-size: 20px;
-      }
+      margin-right: 6px;
     }
   }
   
-  .markdown-content {
-    background: white;
-    padding: 20px;
-    border-radius: 8px;
-    line-height: 1.8;
-    
-    :deep(h2) {
-      color: #303133;
-      font-size: 20px;
-      font-weight: 600;
-      margin-top: 24px;
-      margin-bottom: 16px;
-      padding-bottom: 8px;
-      border-bottom: 2px solid #e4e7ed;
-    }
-    
-    :deep(h3) {
-      color: #606266;
-      font-size: 16px;
-      font-weight: 600;
-      margin-top: 20px;
-      margin-bottom: 12px;
-    }
-    
-    :deep(h4) {
-      color: #606266;
-      font-size: 15px;
-      font-weight: 600;
-      margin-top: 16px;
-      margin-bottom: 10px;
-    }
-    
-    :deep(p) {
-      margin-bottom: 12px;
-      color: #606266;
-    }
-    
-    :deep(ul), :deep(ol) {
-      padding-left: 24px;
-      margin-bottom: 12px;
-      
-      li {
-        margin-bottom: 8px;
-        color: #606266;
-      }
-    }
-    
-    :deep(code) {
-      background: #f5f7fa;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: 13px;
-      color: #e83e8c;
-    }
-    
-    :deep(pre) {
-      background: #282c34;
-      padding: 16px;
-      border-radius: 8px;
-      overflow-x: auto;
-      margin: 16px 0;
-      
-      code {
-        background: transparent;
-        color: #abb2bf;
-        padding: 0;
-      }
-    }
-    
-    :deep(blockquote) {
-      border-left: 4px solid #409eff;
-      padding-left: 16px;
-      margin: 16px 0;
-      color: #606266;
-      background: #ecf5ff;
-      padding: 12px 16px;
-      border-radius: 4px;
-    }
-    
-    :deep(strong) {
-      color: #303133;
-      font-weight: 600;
-    }
-  }
-  
-  .ai-meta {
+  :deep(h4) {
+    color: #606266;
+    font-size: 15px;
+    font-weight: 600;
     margin-top: 16px;
-    text-align: right;
+    margin-bottom: 10px;
   }
+  
+  :deep(p) {
+    margin-bottom: 12px;
+    color: #606266;
+    font-size: 14px;
+  }
+  
+  :deep(ul), :deep(ol) {
+    padding-left: 24px;
+    margin-bottom: 12px;
+    
+    li {
+      margin-bottom: 8px;
+      color: #606266;
+      line-height: 1.6;
+      
+      &::marker {
+        color: #667eea;
+      }
+    }
+  }
+  
+  :deep(code) {
+    background: #f5f7fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 13px;
+    color: #e83e8c;
+    border: 1px solid #e1e4e8;
+  }
+  
+  :deep(pre) {
+    background: #1e1e1e;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+    border: 1px solid #333;
+    
+    code {
+      background: transparent;
+      color: #d4d4d4;
+      padding: 0;
+      border: none;
+      font-size: 13px;
+    }
+  }
+  
+  :deep(blockquote) {
+    border-left: 4px solid #667eea;
+    padding: 12px 16px;
+    margin: 16px 0;
+    background: linear-gradient(135deg, #f0f4ff 0%, #f5f0ff 100%);
+    border-radius: 0 8px 8px 0;
+    color: #5a6c7d;
+    
+    p {
+      margin: 0;
+    }
+  }
+  
+  :deep(table) {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 16px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+    th, td {
+      border: 1px solid #e1e4e8;
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    th {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    tbody tr {
+      background: white;
+      
+      &:nth-child(even) {
+        background: #f8f9fa;
+      }
+      
+      &:hover {
+        background: #e3f2fd;
+      }
+    }
+
+    td {
+      color: #4a5568;
+      font-size: 13px;
+    }
+  }
+  
+  :deep(strong) {
+    color: #303133;
+    font-weight: 600;
+  }
+}
+
+.ai-meta {
+  margin-top: 16px;
+  text-align: right;
 }
 
 .diagnosis-section {
