@@ -344,19 +344,3 @@ ai:
 - [G1 GC调优最佳实践](https://www.oracle.com/technical-resources/articles/java/g1gc.html)
 - [ZGC官方文档](https://wiki.openjdk.org/display/zgc/Main)
 
-### GC日志分析
-- [GC日志格式详解](https://plumbr.io/handbook/gc-logging)
-- [常见GC问题诊断](https://dzone.com/articles/understanding-java-garbage-collection)
-
-## 🤝 反馈与支持
-
-如果您在使用过程中遇到问题或有改进建议，欢迎：
-- 提交Issue
-- 查看项目文档
-- 联系技术支持
-
----
-
-**版本**: 1.0.0  
-**最后更新**: 2025-12-26
-
